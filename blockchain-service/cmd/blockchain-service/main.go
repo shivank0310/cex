@@ -28,6 +28,9 @@ func main() {
 	if rpc := os.Getenv("EVM_RPC_URL"); rpc != "" {
 		cfg.RPCURL = rpc
 	}
+	if vault := os.Getenv("VAULT_CONTRACT_ADDRESS"); vault != "" {
+		cfg.VaultContractAddress = vault
+	}
 	if v := os.Getenv("REQUIRED_CONFIRMATIONS"); v != "" {
 		if n, err := parseInt(v); err == nil && n > 0 {
 			cfg.RequiredConfirmations = n
@@ -50,7 +53,8 @@ func main() {
 	go svc.RunTransactionTracker(ctx)
 
 	go func() {
-		log.Printf("blockchain-service listening on %s (chain=%s wallet=%s)", cfg.HTTPAddr, chain.Chain(), cfg.WalletServiceURL)
+		log.Printf("blockchain-service listening on %s (chain=%s wallet=%s vault=%s)",
+			cfg.HTTPAddr, chain.Chain(), cfg.WalletServiceURL, cfg.VaultContractAddress)
 		if err := http.ListenAndServe(cfg.HTTPAddr, mux); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("http server: %v", err)
 		}

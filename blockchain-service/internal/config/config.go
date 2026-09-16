@@ -6,6 +6,7 @@ type Config struct {
 	HTTPAddr              string
 	WalletServiceURL      string
 	RPCURL                string
+	VaultContractAddress  string
 	RequiredConfirmations int
 	DepositPollInterval   time.Duration
 	TxTrackPollInterval   time.Duration

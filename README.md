@@ -531,10 +531,37 @@ KAFKA_BROKERS=localhost:9092 go run ./order-service/cmd/order-service
 go test ./matching-engine/tests/ ./ledger-service/tests/ ./wallet-service/tests/ ./blockchain-service/tests/ ./settlement-service/tests/ ./market-data/tests/ ./notification-service/tests/ -v
 ```
 
+## On-Chain Contracts
+
+Location: `contracts/`
+
+Solidity contracts for **on-chain custody only** — not order matching.
+
+```
+Order → Off-chain Matching Engine → Off-chain Ledger → Off-chain Settlement
+                                                              │
+On-chain (contracts/): Deposits, Withdrawals, Treasury, Tokens
+```
+
+| Contract | Purpose |
+|----------|---------|
+| `IERC20` | Token interface |
+| `CEXToken` | ERC-20 assets (mock USDT, WBTC) |
+| `CEXVault` | User deposits + operator withdrawals |
+| `Treasury` | Fee reserves and cold-storage sweeps |
+| `Exchange` | Deploys vault + treasury (NOT an order book) |
+
+See [contracts/README.md](contracts/README.md) for architecture and deployment.
+
+```bash
+cd contracts && make install && make test
+```
+
 ## Project layout
 
 ```
 matching-engine/     ← order book, engine, settlement, Kafka publisher
+contracts/           ← Solidity: vault, treasury, tokens (NOT order matching)
 order-service/       ← validation pipeline + HTTP API
 market-data/         ← Kafka consumer + HTTP API (ticker, book, trades, candles, 24h stats)
 ledger-service/      ← double-entry ledger HTTP API (settle-trade, deposit, balances)
@@ -542,6 +569,7 @@ wallet-service/      ← blockchain wallets, deposits, withdrawals
 blockchain-service/  ← EVM isolation: wallets, deposits, withdrawals, tx tracking (port 8085)
 settlement-service/  ← Kafka consumer (trades → ledger → settlement events)
 notification-service/← Kafka consumer (orders, trades, settlement)
+pkg/contracts/       ← on-chain event signatures for blockchain-service
 pkg/events/          ← shared event types + topics
 pkg/kafka/           ← Kafka producer/consumer + in-memory bus
 pkg/redis/           ← cache, session, rate limit, locks, pub/sub
