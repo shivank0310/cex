@@ -88,6 +88,8 @@ func TestAliceBobSettlementFlow(t *testing.T) {
 
 	_ = ledgerSvc.Deposit("alice", "USDT", 1000, "dep-alice")
 	_ = ledgerSvc.Deposit("bob", "BTC", 100, "dep-bob")
+	_ = ledgerSvc.Reserve("alice", "USDT", 1000)
+	_ = ledgerSvc.Reserve("bob", "BTC", 10)
 
 	env, err := events.NewEnvelope(events.TopicTrades, events.TypeTradeExecuted, "T-1", tradePayload())
 	if err != nil {
@@ -149,6 +151,8 @@ func TestSettlementPublishesEvent(t *testing.T) {
 	ledger := client.NewHTTPLedgerClient(srv.URL)
 	_ = ledgerSvc.Deposit("alice", "USDT", 1000, "dep-1")
 	_ = ledgerSvc.Deposit("bob", "BTC", 100, "dep-2")
+	_ = ledgerSvc.Reserve("alice", "USDT", 1000)
+	_ = ledgerSvc.Reserve("bob", "BTC", 10)
 
 	svc := service.NewSettlementService(repo, ledger, bus)
 	env, _ := events.NewEnvelope(events.TopicTrades, events.TypeTradeExecuted, "T-1", tradePayload())
@@ -167,6 +171,8 @@ func TestSettlementIdempotency(t *testing.T) {
 
 	_ = ledgerSvc.Deposit("alice", "USDT", 1000, "dep-1")
 	_ = ledgerSvc.Deposit("bob", "BTC", 100, "dep-2")
+	_ = ledgerSvc.Reserve("alice", "USDT", 1000)
+	_ = ledgerSvc.Reserve("bob", "BTC", 10)
 
 	env, _ := events.NewEnvelope(events.TopicTrades, events.TypeTradeExecuted, "T-dup", tradePayload())
 	env.EventID = "T-dup"

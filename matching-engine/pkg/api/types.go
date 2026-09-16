@@ -54,9 +54,10 @@ type Trade struct {
 	SellOrderID  string
 	BuyerID      string
 	SellerID     string
-	Price        int64
-	Quantity     int64
-	MakerOrderID string
+	Price         int64
+	Quantity      int64
+	BuyLimitPrice int64
+	MakerOrderID  string
 	TakerOrderID string
 	MakerFee     int64
 	TakerFee     int64
@@ -117,9 +118,10 @@ func FromTrade(t *trade.Trade) *Trade {
 		SellOrderID:  t.SellOrderID,
 		BuyerID:      t.BuyerID,
 		SellerID:     t.SellerID,
-		Price:        t.Price,
-		Quantity:     t.Quantity,
-		MakerOrderID: t.MakerOrderID,
+		Price:         t.Price,
+		Quantity:      t.Quantity,
+		BuyLimitPrice: t.BuyLimitPrice,
+		MakerOrderID:  t.MakerOrderID,
 		TakerOrderID: t.TakerOrderID,
 		MakerFee:     t.MakerFee,
 		TakerFee:     t.TakerFee,

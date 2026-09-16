@@ -36,7 +36,7 @@ func seedBook(t *testing.T, eng *engine.Engine) {
 	seedOrder(t, eng, ledger, "ask3", "user-ask-3", order.Sell, 101300, 250)
 }
 
-func seedOrder(t *testing.T, eng *engine.Engine, ledger *settlement.Ledger, id, userID string, side order.Side, price, qty int64) {
+func seedOrder(t *testing.T, eng *engine.Engine, ledger settlement.Store, id, userID string, side order.Side, price, qty int64) {
 	if side == order.Buy {
 		ledger.Deposit(userID, quoteAsset, decimal.Notional(price, qty))
 	} else {

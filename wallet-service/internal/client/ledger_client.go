@@ -14,10 +14,27 @@ import (
 // LedgerClient talks to ledger-service for balance operations.
 type LedgerClient interface {
 	GetBalance(ctx context.Context, userID, asset string) (model.LedgerBalance, error)
+	GetAccount(ctx context.Context, userID string) (AccountResponse, error)
 	Deposit(ctx context.Context, userID, asset string, amount int64, ref string) (model.LedgerBalance, error)
 	Reserve(ctx context.Context, userID, asset string, amount int64) (model.LedgerBalance, error)
 	Release(ctx context.Context, userID, asset string, amount int64) (model.LedgerBalance, error)
 	DebitLocked(ctx context.Context, userID, asset string, amount int64) (model.LedgerBalance, error)
+}
+
+type AccountResponse struct {
+	CanTrade    bool           `json:"canTrade"`
+	CanWithdraw bool           `json:"canWithdraw"`
+	CanDeposit  bool           `json:"canDeposit"`
+	UpdateTime  int64          `json:"updateTime"`
+	AccountType string         `json:"accountType"`
+	Balances    []AssetBalance `json:"balances"`
+	Permissions []string       `json:"permissions"`
+}
+
+type AssetBalance struct {
+	Asset  string `json:"asset"`
+	Free   int64  `json:"free"`
+	Locked int64  `json:"locked"`
 }
 
 type HTTPLedgerClient struct {
@@ -45,6 +62,30 @@ type mutationRequest struct {
 	Asset  string `json:"asset"`
 	Amount int64  `json:"amount"`
 	Ref    string `json:"ref,omitempty"`
+}
+
+func (c *HTTPLedgerClient) GetAccount(ctx context.Context, userID string) (AccountResponse, error) {
+	url := fmt.Sprintf("%s/api/v3/account?user_id=%s", c.baseURL, userID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return AccountResponse{}, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return AccountResponse{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return AccountResponse{}, fmt.Errorf("ledger error: status %d", resp.StatusCode)
+	}
+
+	var account AccountResponse
+	if err := json.NewDecoder(resp.Body).Decode(&account); err != nil {
+		return AccountResponse{}, err
+	}
+	return account, nil
 }
 
 func (c *HTTPLedgerClient) GetBalance(ctx context.Context, userID, asset string) (model.LedgerBalance, error) {
@@ -136,6 +177,24 @@ func (c *InMemoryLedgerClient) key(userID, asset string) *model.LedgerBalance {
 func (c *InMemoryLedgerClient) GetBalance(_ context.Context, userID, asset string) (model.LedgerBalance, error) {
 	b := c.key(userID, asset)
 	return *b, nil
+}
+
+func (c *InMemoryLedgerClient) GetAccount(_ context.Context, userID string) (AccountResponse, error) {
+	balances := make([]AssetBalance, 0)
+	if assets, ok := c.balances[userID]; ok {
+		for asset, bal := range assets {
+			if bal.Available == 0 && bal.Locked == 0 {
+				continue
+			}
+			balances = append(balances, AssetBalance{
+				Asset: asset, Free: bal.Available, Locked: bal.Locked,
+			})
+		}
+	}
+	return AccountResponse{
+		CanTrade: true, CanWithdraw: true, CanDeposit: true,
+		AccountType: "SPOT", Balances: balances, Permissions: []string{"SPOT"},
+	}, nil
 }
 
 func (c *InMemoryLedgerClient) Deposit(_ context.Context, userID, asset string, amount int64, _ string) (model.LedgerBalance, error) {

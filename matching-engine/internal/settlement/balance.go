@@ -9,6 +9,15 @@ import (
 	"github.com/shivank0310/cex.git/matching-engine/pkg/decimal"
 )
 
+// Store performs balance mutations for order placement and trade settlement.
+type Store interface {
+	Deposit(userID, asset string, amount int64)
+	Get(userID, asset string) Balance
+	LockForOrder(o *order.Order, baseAsset, quoteAsset string) error
+	UnlockOrder(o *order.Order, baseAsset, quoteAsset string)
+	SettleTrade(t *trade.Trade, baseAsset, quoteAsset string, buyLimitPrice int64, makerSide order.Side) error
+}
+
 // Balance tracks available and locked funds per user per asset.
 type Balance struct {
 	Available int64

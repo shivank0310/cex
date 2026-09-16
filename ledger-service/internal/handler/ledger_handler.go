@@ -21,12 +21,27 @@ func NewLedgerHandler(svc *service.LedgerService) *LedgerHandler {
 }
 
 func (h *LedgerHandler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/api/v3/account", h.handleAccount)
 	mux.HandleFunc("/api/v1/ledger/deposit", h.handleDeposit)
 	mux.HandleFunc("/api/v1/ledger/settle-trade", h.handleSettleTrade)
 	mux.HandleFunc("/api/v1/ledger/reserve", h.handleReserve)
 	mux.HandleFunc("/api/v1/ledger/release", h.handleRelease)
 	mux.HandleFunc("/api/v1/ledger/debit-locked", h.handleDebitLocked)
 	mux.HandleFunc("/api/v1/ledger/", h.handleLedger)
+}
+
+func (h *LedgerHandler) handleAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "method not allowed")
+		return
+	}
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "INVALID_REQUEST", "user_id query param required")
+		return
+	}
+	accounts := h.svc.GetBalances(userID)
+	httputil.WriteJSON(w, http.StatusOK, dto.ToAccountResponse(accounts))
 }
 
 func (h *LedgerHandler) handleSettleTrade(w http.ResponseWriter, r *http.Request) {

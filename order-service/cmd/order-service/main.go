@@ -25,7 +25,17 @@ import (
 func main() {
 	cfg := config.Default()
 
-	ledger := meapi.NewLedger()
+	var ledger *meapi.Ledger
+	var ledgerClient client.LedgerClient
+	if cfg.LedgerURL != "" {
+		log.Printf("ledger-service enabled at %s (external fund holds)", cfg.LedgerURL)
+		ledger = meapi.NewPermissiveLedger()
+		ledgerClient = client.NewHTTPLedgerClient(cfg.LedgerURL)
+	} else {
+		log.Println("LEDGER_URL not set — using in-memory ledger (demo mode)")
+		ledger = meapi.NewLedger()
+	}
+
 	eng := newEngine(ledger)
 
 	registry := model.NewRegistry()
@@ -37,10 +47,20 @@ func main() {
 		})
 	}
 
-	seedDemoBalances(ledger)
+	if ledgerClient == nil {
+		seedDemoBalances(ledger)
+	}
 
-	pipeline := validator.NewPipeline(registry, client.NewLedgerWallet(ledger))
-	orderSvc := newOrderService(pipeline, eng)
+	var walletClient client.WalletClient
+	if ledgerClient != nil {
+		walletClient = client.NewHTTPLedgerWallet(ledgerClient)
+	} else {
+		walletClient = client.NewLedgerWallet(ledger)
+	}
+
+	pipeline := validator.NewPipeline(registry, walletClient)
+	funds := service.NewFundsHoldManager(ledgerClient)
+	orderSvc := newOrderService(pipeline, eng, funds)
 
 	authenticator := newAuthenticator()
 	orderHandler := handler.NewOrderHandler(orderSvc)
@@ -70,13 +90,13 @@ func newEngine(ledger *meapi.Ledger) *meapi.Engine {
 	return meapi.NewEngineWithPublisher(ledger, meapi.DefaultFeeConfig(), producer)
 }
 
-func newOrderService(pipeline *validator.Pipeline, eng *meapi.Engine) *service.OrderService {
+func newOrderService(pipeline *validator.Pipeline, eng *meapi.Engine, funds *service.FundsHoldManager) *service.OrderService {
 	repo := repository.NewInMemoryOrderRepository()
 	engineClient := client.NewEngineClient(eng)
 
 	if os.Getenv("REDIS_ADDR") == "" {
 		log.Println("REDIS_ADDR not set — Redis features disabled for order-service")
-		return service.NewOrderService(pipeline, engineClient, repo)
+		return service.NewOrderService(pipeline, engineClient, repo, funds)
 	}
 
 	rcfg := redis.ConfigFromEnv()
@@ -87,7 +107,7 @@ func newOrderService(pipeline *validator.Pipeline, eng *meapi.Engine) *service.O
 	log.Printf("Redis enabled for order-service (addr: %s)", rcfg.Addr)
 
 	orderState := redis.NewOrderStateStore(redis.NewCache(client), 10*time.Minute)
-	return service.NewOrderServiceWithRedis(pipeline, engineClient, repo, orderState)
+	return service.NewOrderServiceWithRedis(pipeline, engineClient, repo, funds, orderState)
 }
 
 func newAuthenticator() auth.Authenticator {

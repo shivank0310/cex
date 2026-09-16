@@ -36,15 +36,39 @@ func (s *LedgerService) Handle(ctx context.Context, env events.Envelope) error {
 	return err
 }
 
-// SettleTrade posts a balanced trade journal to the ledger.
+// SettleTrade settles a trade using locked funds (Binance-style) and records the journal.
 func (s *LedgerService) SettleTrade(ctx context.Context, trade events.TradePayload) (model.Journal, error) {
+	if s.repo.IsReferenceProcessed(trade.ID) {
+		return model.Journal{}, fmt.Errorf("trade already processed: %s", trade.ID)
+	}
+
 	journalID := s.repo.NextJournalID()
 	journal, err := engine.BuildTradeJournal(trade, journalID)
 	if err != nil {
 		return model.Journal{}, err
 	}
+	if err := journal.Validate(); err != nil {
+		return model.Journal{}, err
+	}
 
-	if err := s.engine.PostJournal(journal); err != nil {
+	pair, err := model.ParseSymbol(trade.Symbol)
+	if err != nil {
+		return model.Journal{}, err
+	}
+
+	buyerFee, sellerFee := assignTradeFees(trade)
+	buyLimitPrice := trade.BuyLimitPrice
+
+	if err := s.repo.SettleTradeLocked(
+		trade.BuyerID, trade.SellerID,
+		pair.Base, pair.Quote,
+		trade.Price, trade.Quantity,
+		buyerFee, sellerFee, buyLimitPrice,
+	); err != nil {
+		return model.Journal{}, err
+	}
+
+	if err := s.repo.RecordJournal(journal); err != nil {
 		return model.Journal{}, err
 	}
 
@@ -54,8 +78,15 @@ func (s *LedgerService) SettleTrade(ctx context.Context, trade events.TradePaylo
 		}
 	}
 
-	log.Printf("[ledger] posted journal %s trade=%s legs=%d", journal.ID, trade.ID, len(journal.Legs))
+	log.Printf("[ledger] settled trade %s journal=%s legs=%d", trade.ID, journal.ID, len(journal.Legs))
 	return journal, nil
+}
+
+func assignTradeFees(trade events.TradePayload) (buyerFee, sellerFee int64) {
+	if trade.MakerOrderID == trade.BuyOrderID {
+		return trade.MakerFee, trade.TakerFee
+	}
+	return trade.TakerFee, trade.MakerFee
 }
 
 func (s *LedgerService) Deposit(userID, asset string, amount int64, ref string) error {

@@ -70,6 +70,44 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// AccountResponse mirrors Binance GET /api/v3/account (free = available, locked = locked).
+type AccountResponse struct {
+	CanTrade    bool             `json:"canTrade"`
+	CanWithdraw bool             `json:"canWithdraw"`
+	CanDeposit  bool             `json:"canDeposit"`
+	UpdateTime  int64            `json:"updateTime"`
+	AccountType string           `json:"accountType"`
+	Balances    []AssetBalance   `json:"balances"`
+	Permissions []string         `json:"permissions"`
+}
+
+type AssetBalance struct {
+	Asset  string `json:"asset"`
+	Free   int64  `json:"free"`
+	Locked int64  `json:"locked"`
+}
+
+func ToAccountResponse(accounts []model.Account) AccountResponse {
+	balances := make([]AssetBalance, 0, len(accounts))
+	for _, a := range accounts {
+		if a.Available == 0 && a.Locked == 0 {
+			continue
+		}
+		balances = append(balances, AssetBalance{
+			Asset: a.Asset, Free: a.Available, Locked: a.Locked,
+		})
+	}
+	return AccountResponse{
+		CanTrade:    true,
+		CanWithdraw: true,
+		CanDeposit:  true,
+		UpdateTime:  time.Now().UTC().UnixMilli(),
+		AccountType: "SPOT",
+		Balances:    balances,
+		Permissions: []string{"SPOT"},
+	}
+}
+
 func ToBalanceResponse(a model.Account) BalanceResponse {
 	return BalanceResponse{
 		UserID:    a.UserID,
