@@ -20,10 +20,13 @@ func main() {
 	if url := os.Getenv("LEDGER_URL"); url != "" {
 		cfg.LedgerURL = url
 	}
+	if url := os.Getenv("BLOCKCHAIN_URL"); url != "" {
+		cfg.BlockchainURL = url
+	}
 
 	repo := repository.NewWalletRepository()
 	ledger := client.NewHTTPLedgerClient(cfg.LedgerURL)
-	blockchain := client.NewMockBlockchainClient()
+	blockchain := client.NewHTTPBlockchainClient(cfg.BlockchainURL)
 
 	svc := service.NewWalletService(cfg, repo, ledger, blockchain)
 	walletHandler := handler.NewWalletHandler(svc)
@@ -31,6 +34,6 @@ func main() {
 	mux := http.NewServeMux()
 	walletHandler.Register(mux)
 
-	log.Printf("wallet-service listening on %s (ledger: %s)", cfg.HTTPAddr, cfg.LedgerURL)
+	log.Printf("wallet-service listening on %s (ledger: %s, blockchain: %s)", cfg.HTTPAddr, cfg.LedgerURL, cfg.BlockchainURL)
 	log.Fatal(http.ListenAndServe(cfg.HTTPAddr, mux))
 }

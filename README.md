@@ -378,13 +378,81 @@ curl http://localhost:8084/api/v1/wallet/withdrawal/<withdrawal_id>
 ### Run wallet-service
 
 ```bash
-LEDGER_URL=http://localhost:8083 go run ./wallet-service/cmd/wallet-service
+LEDGER_URL=http://localhost:8083 BLOCKCHAIN_URL=http://localhost:8085 go run ./wallet-service/cmd/wallet-service
 ```
 
 ### Run wallet tests
 
 ```bash
 go test ./wallet-service/tests/ -v
+```
+
+## Blockchain Service
+
+Location: `blockchain-service/`
+
+Isolates all EVM/blockchain infrastructure from core exchange services. **order-service** and **matching-engine** never call Ethereum RPC directly — only blockchain-service does.
+
+### Architecture
+
+```
+CEX Services (wallet-service, order-service, matching-engine)
+     │
+     ▼  HTTP only — no direct RPC
+Blockchain Service (:8085)
+     │
+     ├── EVM Provider (abstracted — replaceable)
+     ├── Wallet (custody address generation)
+     ├── Deposit monitor (watches addresses → wallet-service)
+     ├── Withdrawal (broadcast on-chain)
+     └── Transaction tracking (pending → confirmed)
+             │
+             ▼
+           EVM
+```
+
+### HTTP API (port 8085)
+
+```bash
+# Generate custody deposit address
+curl -X POST http://localhost:8085/api/v1/blockchain/address \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"alice","asset":"USDT","chain":"ethereum"}'
+
+# Validate address
+curl -X POST http://localhost:8085/api/v1/blockchain/address/validate \
+  -H "Content-Type: application/json" \
+  -d '{"address":"0xabc1234567890"}'
+
+# Broadcast withdrawal
+curl -X POST http://localhost:8085/api/v1/blockchain/withdraw \
+  -H "Content-Type: application/json" \
+  -d '{"asset":"USDT","to_address":"0xrecipient...","amount":500}'
+
+# Track transaction
+curl http://localhost:8085/api/v1/blockchain/transaction/0xwithdraw-USDT-500-1
+```
+
+### Deposit flow (automated)
+
+1. wallet-service requests address from blockchain-service
+2. blockchain-service registers address for deposit monitoring
+3. Deposit monitor detects on-chain transfer (confirmations met)
+4. blockchain-service calls wallet-service `deposit/confirm`
+5. wallet-service credits ledger
+
+### Run blockchain-service
+
+```bash
+WALLET_SERVICE_URL=http://localhost:8084 go run ./blockchain-service/cmd/blockchain-service
+```
+
+Env vars: `EVM_RPC_URL` (future real RPC), `REQUIRED_CONFIRMATIONS` (default 12).
+
+### Run blockchain tests
+
+```bash
+go test ./blockchain-service/tests/ -v
 ```
 
 ## Settlement Service
@@ -460,7 +528,7 @@ KAFKA_BROKERS=localhost:9092 go run ./order-service/cmd/order-service
 ### Run event tests
 
 ```bash
-go test ./matching-engine/tests/ ./ledger-service/tests/ ./wallet-service/tests/ ./settlement-service/tests/ ./market-data/tests/ ./notification-service/tests/ -v
+go test ./matching-engine/tests/ ./ledger-service/tests/ ./wallet-service/tests/ ./blockchain-service/tests/ ./settlement-service/tests/ ./market-data/tests/ ./notification-service/tests/ -v
 ```
 
 ## Project layout
@@ -471,7 +539,7 @@ order-service/       ← validation pipeline + HTTP API
 market-data/         ← Kafka consumer + HTTP API (ticker, book, trades, candles, 24h stats)
 ledger-service/      ← double-entry ledger HTTP API (settle-trade, deposit, balances)
 wallet-service/      ← blockchain wallets, deposits, withdrawals
-blockchain-service/  ← placeholder for on-chain monitoring (port 8085)
+blockchain-service/  ← EVM isolation: wallets, deposits, withdrawals, tx tracking (port 8085)
 settlement-service/  ← Kafka consumer (trades → ledger → settlement events)
 notification-service/← Kafka consumer (orders, trades, settlement)
 pkg/events/          ← shared event types + topics
