@@ -9,6 +9,7 @@ import (
 
 	"github.com/shivank0310/cex.git/notification-service/internal/service"
 	"github.com/shivank0310/cex.git/pkg/events"
+	"github.com/shivank0310/cex.git/pkg/health"
 	"github.com/shivank0310/cex.git/pkg/kafka"
 )
 
@@ -26,6 +27,8 @@ func main() {
 		events.TopicTrades,
 		events.TopicSettlement,
 	}, svc.Handle)
+
+	health.Serve(os.Getenv("HEALTH_ADDR"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

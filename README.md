@@ -573,9 +573,33 @@ pkg/contracts/       ← on-chain event signatures for blockchain-service
 pkg/events/          ← shared event types + topics
 pkg/kafka/           ← Kafka producer/consumer + in-memory bus
 pkg/redis/           ← cache, session, rate limit, locks, pub/sub
-docker/              ← Kafka + Redis docker-compose
+docker/              ← Docker Compose: all services + postgres, redis, kafka, nginx, monitoring
 ...
 ```
+
+## Docker
+
+Location: `docker/`
+
+Run the full CEX stack as containers:
+
+```bash
+docker compose -f docker/docker-compose.yml up --build
+```
+
+| URL | Service |
+|-----|---------|
+| http://localhost | Nginx (frontend + API gateway) |
+| http://localhost:3000 | Grafana (admin / admin) |
+| http://localhost:9090 | Prometheus |
+
+Infrastructure only (for local Go dev):
+
+```bash
+docker compose -f docker/docker-compose.infra.yml up -d
+```
+
+See [docker/README.md](docker/README.md) for full container map and gateway routes.
 
 ## Build
 

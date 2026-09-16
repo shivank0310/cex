@@ -16,6 +16,7 @@ import (
 	"github.com/shivank0310/cex.git/market-data/internal/service"
 	"github.com/shivank0310/cex.git/market-data/internal/store"
 	"github.com/shivank0310/cex.git/pkg/events"
+	"github.com/shivank0310/cex.git/pkg/health"
 	"github.com/shivank0310/cex.git/pkg/kafka"
 	"github.com/shivank0310/cex.git/pkg/redis"
 )
@@ -31,6 +32,7 @@ func main() {
 	marketHandler := handler.NewMarketHandler(svc)
 
 	mux := http.NewServeMux()
+	health.Register(mux)
 	marketHandler.Register(mux)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

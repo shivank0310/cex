@@ -7,6 +7,7 @@ import (
 
 	"github.com/shivank0310/cex.git/wallet-service/internal/client"
 	"github.com/shivank0310/cex.git/wallet-service/internal/config"
+	"github.com/shivank0310/cex.git/pkg/health"
 	"github.com/shivank0310/cex.git/wallet-service/internal/handler"
 	"github.com/shivank0310/cex.git/wallet-service/internal/repository"
 	"github.com/shivank0310/cex.git/wallet-service/internal/service"
@@ -32,6 +33,7 @@ func main() {
 	walletHandler := handler.NewWalletHandler(svc)
 
 	mux := http.NewServeMux()
+	health.Register(mux)
 	walletHandler.Register(mux)
 
 	log.Printf("wallet-service listening on %s (ledger: %s, blockchain: %s)", cfg.HTTPAddr, cfg.LedgerURL, cfg.BlockchainURL)

@@ -1,13 +1,52 @@
+# CEX full stack — run from repo root:
+#   docker compose -f docker/docker-compose.yml up --build
+name: cex
+
+x-go-service: &go-service
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  restart: unless-stopped
+  networks:
+    - cex
+
 services:
+  # ── Infrastructure ──────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cex
+      POSTGRES_PASSWORD: cex
+      POSTGRES_DB: cex
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cex -d cex"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - cex
+
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - cex
 
   kafka:
     image: bitnami/kafka:3.6
@@ -20,13 +59,15 @@ services:
       KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
       KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       ALLOW_PLAINTEXT_LISTENER: "yes"
     healthcheck:
       test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
       interval: 10s
       timeout: 10s
-      retries: 5
+      retries: 8
+    networks:
+      - cex
 
   kafka-init:
     image: bitnami/kafka:3.6
@@ -39,4 +80,269 @@ services:
         for topic in orders trades orderbook ledger settlement notifications; do
           kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $$topic --partitions 3 --replication-factor 1
         done
-        echo "Topics created."
+        echo "Kafka topics ready."
+    networks:
+      - cex
+
+  # ── API Gateway + Frontend ──────────────────────────────────────────────────
+
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - order-service
+      - market-data
+      - ledger-service
+      - wallet-service
+      - blockchain-service
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/gateway/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - cex
+
+  # ── Core CEX Services ───────────────────────────────────────────────────────
+
+  order-service:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: order-service/cmd/order-service
+    environment:
+      HTTP_ADDR: ":8081"
+      KAFKA_BROKERS: kafka:9092
+      REDIS_ADDR: redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  market-data:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: market-data/cmd/market-data
+    environment:
+      HTTP_ADDR: ":8082"
+      KAFKA_BROKERS: kafka:9092
+      REDIS_ADDR: redis:6379
+    ports:
+      - "8082:8082"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  ledger-service:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: ledger-service/cmd/ledger-service
+    environment:
+      HTTP_ADDR: ":8083"
+      KAFKA_BROKERS: kafka:9092
+    ports:
+      - "8083:8083"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8083/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  wallet-service:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: wallet-service/cmd/wallet-service
+    environment:
+      HTTP_ADDR: ":8084"
+      LEDGER_URL: http://ledger-service:8083
+      BLOCKCHAIN_URL: http://blockchain-service:8085
+    ports:
+      - "8084:8084"
+    depends_on:
+      ledger-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8084/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  blockchain-service:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: blockchain-service/cmd/blockchain-service
+    environment:
+      HTTP_ADDR: ":8085"
+      WALLET_SERVICE_URL: http://wallet-service:8084
+      REQUIRED_CONFIRMATIONS: "1"
+    ports:
+      - "8085:8085"
+    depends_on:
+      wallet-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8085/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
+  settlement-service:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: settlement-service/cmd/settlement-service
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      LEDGER_URL: http://ledger-service:8083
+      HEALTH_ADDR: ":8096"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      ledger-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8096/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "8096:8096"
+
+  notification-service:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: notification-service/cmd/notification-service
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      HEALTH_ADDR: ":8097"
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8097/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    ports:
+      - "8097:8097"
+
+  # ── Placeholder services (replace with full implementations) ────────────────
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: docker/stubs/Dockerfile
+    environment:
+      SERVICE_NAME: auth-service
+      HTTP_ADDR: ":8090"
+    ports:
+      - "8090:8090"
+    networks:
+      - cex
+
+  user-service:
+    build:
+      context: ..
+      dockerfile: docker/stubs/Dockerfile
+    environment:
+      SERVICE_NAME: user-service
+      HTTP_ADDR: ":8091"
+    ports:
+      - "8091:8091"
+    networks:
+      - cex
+
+  matching-service:
+    build:
+      context: ..
+      dockerfile: docker/stubs/Dockerfile
+    environment:
+      SERVICE_NAME: matching-service
+      HTTP_ADDR: ":8092"
+    ports:
+      - "8092:8092"
+    networks:
+      - cex
+
+  # ── Monitoring ──────────────────────────────────────────────────────────────
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    networks:
+      - cex
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - cex
+
+networks:
+  cex:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

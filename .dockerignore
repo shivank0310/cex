@@ -1,0 +1,11 @@
+.git
+.gitignore
+**/*.md
+contracts/cache
+contracts/out
+contracts/lib
+contracts/broadcast
+**/*_test.go
+**/tests/
+.cursor
+terminals

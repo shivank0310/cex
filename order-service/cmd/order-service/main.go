@@ -18,6 +18,7 @@ import (
 	"github.com/shivank0310/cex.git/order-service/internal/repository"
 	"github.com/shivank0310/cex.git/order-service/internal/service"
 	"github.com/shivank0310/cex.git/order-service/internal/validator"
+	"github.com/shivank0310/cex.git/pkg/health"
 	"github.com/shivank0310/cex.git/pkg/kafka"
 	"github.com/shivank0310/cex.git/pkg/redis"
 )
@@ -46,6 +47,7 @@ func main() {
 	orderHandler := handler.NewOrderHandler(orderSvc)
 
 	mux := http.NewServeMux()
+	health.Register(mux)
 	orderHandler.Register(mux)
 
 	var root http.Handler = mux

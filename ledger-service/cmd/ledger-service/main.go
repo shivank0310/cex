@@ -15,6 +15,7 @@ import (
 	"github.com/shivank0310/cex.git/ledger-service/internal/repository"
 	"github.com/shivank0310/cex.git/ledger-service/internal/service"
 	"github.com/shivank0310/cex.git/pkg/events"
+	"github.com/shivank0310/cex.git/pkg/health"
 	"github.com/shivank0310/cex.git/pkg/kafka"
 )
 
@@ -39,6 +40,7 @@ func main() {
 	ledgerHandler := handler.NewLedgerHandler(svc)
 
 	mux := http.NewServeMux()
+	health.Register(mux)
 	ledgerHandler.Register(mux)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: cex-services
+    metrics_path: /health
+    static_configs:
+      - targets:
+          - order-service:8081
+          - market-data:8082
+          - ledger-service:8083
+          - wallet-service:8084
+          - blockchain-service:8085
+          - auth-service:8090
+          - user-service:8091
+          - matching-service:8092
+        labels:
+          group: cex
+
+  - job_name: nginx
+    static_configs:
+      - targets: ["nginx:80"]
+    metrics_path: /gateway/health

@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/shivank0310/cex.git/pkg/events"
+	"github.com/shivank0310/cex.git/pkg/health"
 	"github.com/shivank0310/cex.git/pkg/kafka"
 	"github.com/shivank0310/cex.git/settlement-service/internal/client"
 	"github.com/shivank0310/cex.git/settlement-service/internal/config"
@@ -34,6 +35,8 @@ func main() {
 	consumer := kafka.NewConsumer(kcfg, "settlement-service", []string{
 		events.TopicTrades,
 	}, svc.Handle)
+
+	health.Serve(os.Getenv("HEALTH_ADDR"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
