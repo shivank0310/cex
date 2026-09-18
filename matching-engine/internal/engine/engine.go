@@ -29,13 +29,13 @@ type Engine struct {
 	mu            sync.Mutex
 	books         map[string]*orderbook.OrderBook
 	symbols       map[string]SymbolConfig
-	ledger        *settlement.Ledger
+	ledger        settlement.Store
 	fees          FeeConfig
 	orderSequence uint64
 	tradeSequence uint64
 }
 
-func New(ledger *settlement.Ledger, fees FeeConfig) *Engine {
+func New(ledger settlement.Store, fees FeeConfig) *Engine {
 	return &Engine{
 		books:   make(map[string]*orderbook.OrderBook),
 		symbols: make(map[string]SymbolConfig),
@@ -57,7 +57,7 @@ func (e *Engine) GetBook(symbol string) *orderbook.OrderBook {
 	return e.books[symbol]
 }
 
-func (e *Engine) Ledger() *settlement.Ledger {
+func (e *Engine) Ledger() settlement.Store {
 	return e.ledger
 }
 

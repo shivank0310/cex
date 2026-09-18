@@ -40,6 +40,10 @@ type ValidatedOrder struct {
 	Quantity int64
 }
 
+func (p *Pipeline) SymbolFor(symbol string) (model.Symbol, error) {
+	return p.symbol.Validate(symbol)
+}
+
 func (p *Pipeline) Validate(userID string, req dto.PlaceOrderRequest) (ValidatedOrder, error) {
 	side, orderType, err := p.request.ValidatePlace(req)
 	if err != nil {

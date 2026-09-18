@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/shivank0310/cex.git/ledger-service/internal/model"
+	"github.com/shivank0310/cex.git/matching-engine/pkg/decimal"
 )
 
 // LedgerRepository is the source of truth for accounts and journals (in-memory; PostgreSQL later).
@@ -153,8 +154,76 @@ func (r *LedgerRepository) DebitLocked(userID, asset string, amount int64) error
 	return nil
 }
 
+// RecordJournal stores a journal for audit without applying balance changes.
+func (r *LedgerRepository) RecordJournal(journal model.Journal) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i, leg := range journal.Legs {
+		if leg.ID == "" {
+			journal.Legs[i].ID = r.nextLegID()
+		}
+		journal.Legs[i].JournalID = journal.ID
+	}
+
+	r.journals = append(r.journals, journal)
+	if journal.Type == model.JournalTrade {
+		r.processed[journal.Reference] = true
+	}
+	return nil
+}
+
 func (r *LedgerRepository) ListJournals() []model.Journal {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return append([]model.Journal(nil), r.journals...)
+}
+
+// SettleTradeLocked settles a trade using locked funds (Binance-style free/locked model).
+// Seller base asset is debited from locked; buyer quote asset is debited from locked
+// (with price-improvement refund when buyLimitPrice > execution price).
+func (r *LedgerRepository) SettleTradeLocked(
+	buyerID, sellerID, baseAsset, quoteAsset string,
+	price, quantity, buyerFee, sellerFee, buyLimitPrice int64,
+) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	notional := decimal.Notional(price, quantity)
+
+	sellerBase := r.getOrCreate(sellerID, baseAsset)
+	if sellerBase.Locked < quantity {
+		return fmt.Errorf("seller insufficient locked %s: have %d need %d", baseAsset, sellerBase.Locked, quantity)
+	}
+	sellerBase.Locked -= quantity
+
+	buyerQuote := r.getOrCreate(buyerID, quoteAsset)
+	if buyLimitPrice > 0 {
+		lockedSlice := decimal.Notional(buyLimitPrice, quantity)
+		if buyerQuote.Locked < lockedSlice {
+			return fmt.Errorf("buyer insufficient locked %s: have %d need %d", quoteAsset, buyerQuote.Locked, lockedSlice)
+		}
+		buyerQuote.Locked -= lockedSlice
+		buyerQuote.Available += lockedSlice - notional
+	} else {
+		if buyerQuote.Locked < notional {
+			return fmt.Errorf("buyer insufficient locked %s: have %d need %d", quoteAsset, buyerQuote.Locked, notional)
+		}
+		buyerQuote.Locked -= notional
+	}
+
+	buyerBase := r.getOrCreate(buyerID, baseAsset)
+	buyerBase.Available += quantity - buyerFee
+
+	sellerQuote := r.getOrCreate(sellerID, quoteAsset)
+	sellerQuote.Available += notional - sellerFee
+
+	if buyerFee > 0 {
+		r.getOrCreate("exchange:fees", baseAsset).Available += buyerFee
+	}
+	if sellerFee > 0 {
+		r.getOrCreate("exchange:fees", quoteAsset).Available += sellerFee
+	}
+
+	return nil
 }

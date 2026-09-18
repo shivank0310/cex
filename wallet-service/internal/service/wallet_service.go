@@ -72,6 +72,15 @@ func (s *WalletService) CreateDepositAddress(ctx context.Context, userID, asset,
 	return wallet, nil
 }
 
+// GetAccount returns Binance-style spot account balances (free/locked).
+func (s *WalletService) GetAccount(ctx context.Context, userID string) (client.AccountResponse, error) {
+	account, err := s.ledger.GetAccount(ctx, userID)
+	if err != nil {
+		return client.AccountResponse{}, apperrors.Wrap(apperrors.CodeLedgerError, "failed to fetch account", err)
+	}
+	return account, nil
+}
+
 // GetLedgerBalance returns the user's internal ledger balance (not blockchain wallet).
 func (s *WalletService) GetLedgerBalance(ctx context.Context, userID, asset string) (model.LedgerBalance, error) {
 	bal, err := s.ledger.GetBalance(ctx, userID, asset)

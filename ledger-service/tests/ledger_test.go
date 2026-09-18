@@ -29,6 +29,14 @@ func TestAliceBobTrade(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Lock funds for the trade (Binance-style free → locked before settlement).
+	if err := svc.Reserve("alice", "USDT", 1000); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Reserve("bob", "BTC", 10); err != nil {
+		t.Fatal(err)
+	}
+
 	// Alice buys 0.1 BTC @ 10000 USDT
 	env, err := events.NewEnvelope(events.TopicTrades, events.TypeTradeExecuted, "T-1", events.TradePayload{
 		ID: "T-1", Symbol: "BTC/USDT",
@@ -84,6 +92,9 @@ func TestTradeIdempotency(t *testing.T) {
 	_ = svc.Deposit("alice", "USDT", 1000, "dep-1")
 	_ = svc.Deposit("bob", "BTC", 100, "dep-2")
 
+	_ = svc.Reserve("alice", "USDT", 1000)
+	_ = svc.Reserve("bob", "BTC", 10)
+
 	trade := events.TradePayload{
 		ID: "T-dup", Symbol: "BTC/USDT",
 		BuyerID: "alice", SellerID: "bob",
@@ -130,6 +141,8 @@ func TestPublishesJournalToKafka(t *testing.T) {
 
 	_ = svc.Deposit("alice", "USDT", 1000, "dep")
 	_ = svc.Deposit("bob", "BTC", 100, "dep")
+	_ = svc.Reserve("alice", "USDT", 1000)
+	_ = svc.Reserve("bob", "BTC", 10)
 
 	env, _ := events.NewEnvelope(events.TopicTrades, events.TypeTradeExecuted, "T-1", events.TradePayload{
 		ID: "T-1", Symbol: "BTC/USDT",
@@ -148,6 +161,8 @@ func TestJournalRetrieval(t *testing.T) {
 	svc := setup()
 	_ = svc.Deposit("alice", "USDT", 1000, "dep")
 	_ = svc.Deposit("bob", "BTC", 100, "dep")
+	_ = svc.Reserve("alice", "USDT", 1000)
+	_ = svc.Reserve("bob", "BTC", 10)
 
 	env, _ := events.NewEnvelope(events.TopicTrades, events.TypeTradeExecuted, "T-99", events.TradePayload{
 		ID: "T-99", Symbol: "BTC/USDT",

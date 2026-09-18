@@ -22,10 +22,38 @@ func NewWalletHandler(svc *service.WalletService) *WalletHandler {
 }
 
 func (h *WalletHandler) Register(mux *http.ServeMux) {
+	mux.HandleFunc("/api/v3/account", h.handleAccount)
 	mux.HandleFunc("/api/v1/wallet/address", h.handleCreateAddress)
 	mux.HandleFunc("/api/v1/wallet/deposit/confirm", h.handleConfirmDeposit)
 	mux.HandleFunc("/api/v1/wallet/withdraw", h.handleWithdraw)
 	mux.HandleFunc("/api/v1/wallet/", h.handleWallet)
+}
+
+func (h *WalletHandler) handleAccount(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "method not allowed"))
+		return
+	}
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "user_id query param required"))
+		return
+	}
+	account, err := h.svc.GetAccount(r.Context(), userID)
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	resp := dto.AccountResponse{
+		CanTrade: account.CanTrade, CanWithdraw: account.CanWithdraw, CanDeposit: account.CanDeposit,
+		UpdateTime: account.UpdateTime, AccountType: account.AccountType, Permissions: account.Permissions,
+	}
+	for _, b := range account.Balances {
+		resp.Balances = append(resp.Balances, dto.AssetBalance{
+			Asset: b.Asset, Free: b.Free, Locked: b.Locked,
+		})
+	}
+	httputil.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *WalletHandler) handleCreateAddress(w http.ResponseWriter, r *http.Request) {

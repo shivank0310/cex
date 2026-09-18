@@ -51,9 +51,10 @@ type TradePayload struct {
 	SellOrderID  string    `json:"sell_order_id"`
 	BuyerID      string    `json:"buyer_id"`
 	SellerID     string    `json:"seller_id"`
-	Price        int64     `json:"price"`
-	Quantity     int64     `json:"quantity"`
-	MakerOrderID string    `json:"maker_order_id"`
+	Price         int64     `json:"price"`
+	Quantity      int64     `json:"quantity"`
+	BuyLimitPrice int64     `json:"buy_limit_price,omitempty"`
+	MakerOrderID  string    `json:"maker_order_id"`
 	TakerOrderID string    `json:"taker_order_id"`
 	MakerFee     int64     `json:"maker_fee"`
 	TakerFee     int64     `json:"taker_fee"`

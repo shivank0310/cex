@@ -10,11 +10,17 @@ type Balance struct {
 
 // Ledger is the public ledger facade for balance operations.
 type Ledger struct {
-	inner *settlement.Ledger
+	inner settlement.Store
 }
 
 func NewLedger() *Ledger {
- 	return &Ledger{inner: settlement.NewLedger()}
+	return &Ledger{inner: settlement.NewLedger()}
+}
+
+// NewPermissiveLedger returns a ledger facade that skips internal balance
+// mutations. Use when ledger-service owns fund holds and settlement.
+func NewPermissiveLedger() *Ledger {
+	return &Ledger{inner: settlement.NewPermissiveLedger()}
 }
 
 func (l *Ledger) Deposit(userID, asset string, amount int64) {

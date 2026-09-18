@@ -43,6 +43,7 @@ func setup(t *testing.T) (*service.OrderService, *meapi.Ledger, *meapi.Engine) {
 		pipeline,
 		client.NewEngineClient(eng),
 		repository.NewInMemoryOrderRepository(),
+		service.NewFundsHoldManager(nil),
 	)
 
 	seedSell(t, eng, ledger, "ask1", "seller-1", 101100, 30)

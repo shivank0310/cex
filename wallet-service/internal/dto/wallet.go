@@ -72,6 +72,23 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
+// AccountResponse mirrors Binance GET /api/v3/account spot balances.
+type AccountResponse struct {
+	CanTrade    bool           `json:"canTrade"`
+	CanWithdraw bool           `json:"canWithdraw"`
+	CanDeposit  bool           `json:"canDeposit"`
+	UpdateTime  int64          `json:"updateTime"`
+	AccountType string         `json:"accountType"`
+	Balances    []AssetBalance `json:"balances"`
+	Permissions []string       `json:"permissions"`
+}
+
+type AssetBalance struct {
+	Asset  string `json:"asset"`
+	Free   int64  `json:"free"`
+	Locked int64  `json:"locked"`
+}
+
 func ToWalletResponse(w model.Wallet) WalletResponse {
 	return WalletResponse{
 		ID: w.ID, UserID: w.UserID, Asset: w.Asset,
