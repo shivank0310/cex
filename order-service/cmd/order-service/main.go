@@ -39,12 +39,19 @@ func main() {
 	eng := newEngine(ledger)
 
 	registry := model.NewRegistry()
-	for _, sym := range model.DefaultSymbols() {
+	symbols := model.DefaultSymbols()
+	if cfg.RouteBinance {
+		symbols = model.BinanceSymbols()
+		log.Println("ROUTE_BINANCE=1 — routing orders to Binance adapter")
+	}
+	for _, sym := range symbols {
 		registry.Register(sym)
-		eng.RegisterSymbol(sym.Name, meapi.SymbolConfig{
-			BaseAsset:  sym.BaseAsset,
-			QuoteAsset: sym.QuoteAsset,
-		})
+		if sym.Venue == model.VenueInternal {
+			eng.RegisterSymbol(sym.Name, meapi.SymbolConfig{
+				BaseAsset:  sym.BaseAsset,
+				QuoteAsset: sym.QuoteAsset,
+			})
+		}
 	}
 
 	if ledgerClient == nil {
@@ -60,7 +67,7 @@ func main() {
 
 	pipeline := validator.NewPipeline(registry, walletClient)
 	funds := service.NewFundsHoldManager(ledgerClient)
-	orderSvc := newOrderService(pipeline, eng, funds)
+	orderSvc := newOrderService(cfg, pipeline, registry, eng, funds)
 
 	authenticator := newAuthenticator()
 	orderHandler := handler.NewOrderHandler(orderSvc)
@@ -90,9 +97,16 @@ func newEngine(ledger *meapi.Ledger) *meapi.Engine {
 	return meapi.NewEngineWithPublisher(ledger, meapi.DefaultFeeConfig(), producer)
 }
 
-func newOrderService(pipeline *validator.Pipeline, eng *meapi.Engine, funds *service.FundsHoldManager) *service.OrderService {
+func newOrderService(cfg config.Config, pipeline *validator.Pipeline, registry *model.Registry, eng *meapi.Engine, funds *service.FundsHoldManager) *service.OrderService {
 	repo := repository.NewInMemoryOrderRepository()
-	engineClient := client.NewEngineClient(eng)
+	internalClient := client.NewEngineClient(eng)
+
+	var engineClient client.MatchingEngineClient = internalClient
+	if cfg.BinanceURL != "" {
+		binanceClient := client.NewBinanceEngineClient(cfg.BinanceURL)
+		engineClient = client.NewVenueRouter(registry, internalClient, binanceClient)
+		log.Printf("Binance adapter enabled at %s", cfg.BinanceURL)
+	}
 
 	if os.Getenv("REDIS_ADDR") == "" {
 		log.Println("REDIS_ADDR not set — Redis features disabled for order-service")

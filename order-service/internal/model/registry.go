@@ -50,6 +50,7 @@ func DefaultSymbols() []Symbol {
 			BaseAsset:   "BTC",
 			QuoteAsset:  "USDT",
 			Active:      true,
+			Venue:       VenueInternal,
 			MinPrice:    1,
 			MaxPrice:    10_000_000,
 			TickSize:    1,
@@ -59,4 +60,13 @@ func DefaultSymbols() []Symbol {
 			MinNotional: 10,
 		},
 	}
+}
+
+// BinanceSymbols returns symbols routed to Binance Spot API.
+func BinanceSymbols() []Symbol {
+	syms := DefaultSymbols()
+	for i := range syms {
+		syms[i].Venue = VenueBinance
+	}
+	return syms
 }
