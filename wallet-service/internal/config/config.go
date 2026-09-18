@@ -16,6 +16,6 @@ func Default() Config {
 		BlockchainURL: "http://localhost:8085",
 		MinDeposit:    1,
 		MinWithdraw:   1,
-		MaxWithdraw:   1_000_000,
+		MaxWithdraw:   100_000_000, // must exceed highest approval tier
 	}
 }

@@ -37,31 +37,48 @@ type Deposit struct {
 	CreatedAt     time.Time
 }
 
-// WithdrawalStatus tracks withdrawal lifecycle.
+// WithdrawalStatus tracks the secure withdrawal pipeline lifecycle.
 type WithdrawalStatus string
 
 const (
-	WithdrawalPending    WithdrawalStatus = "PENDING"
-	WithdrawalReserved   WithdrawalStatus = "RESERVED"
-	WithdrawalBroadcast  WithdrawalStatus = "BROADCAST"
-	WithdrawalCompleted  WithdrawalStatus = "COMPLETED"
-	WithdrawalFailed     WithdrawalStatus = "FAILED"
-	WithdrawalCancelled  WithdrawalStatus = "CANCELLED"
+	WithdrawalPendingRisk      WithdrawalStatus = "PENDING_RISK"
+	WithdrawalPendingMFA     WithdrawalStatus = "PENDING_MFA"
+	WithdrawalPendingApproval WithdrawalStatus = "PENDING_APPROVAL"
+	WithdrawalPendingMultisig WithdrawalStatus = "PENDING_MULTISIG"
+	WithdrawalApproved       WithdrawalStatus = "APPROVED"
+	WithdrawalReserved       WithdrawalStatus = "RESERVED"
+	WithdrawalSigning        WithdrawalStatus = "SIGNING"
+	WithdrawalBroadcast      WithdrawalStatus = "BROADCAST"
+	WithdrawalCompleted      WithdrawalStatus = "COMPLETED"
+	WithdrawalRejected       WithdrawalStatus = "REJECTED"
+	WithdrawalFailed         WithdrawalStatus = "FAILED"
+	WithdrawalCancelled      WithdrawalStatus = "CANCELLED"
+
+	// Legacy aliases kept for backward compatibility.
+	WithdrawalPending = WithdrawalPendingRisk
 )
 
 // Withdrawal is a user request to send funds on-chain.
+// Funds never go directly from user account → blockchain.
+// They pass through: Risk → MFA → Approval → HSM → Blockchain.
 type Withdrawal struct {
-	ID          string
-	UserID      string
-	Asset       string
-	Amount      int64
-	ToAddress   string
-	Status      WithdrawalStatus
-	TxHash      string
-	LedgerRef   string
-	RiskNote    string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID           string
+	UserID       string
+	Asset        string
+	Amount       int64
+	ToAddress    string
+	Status       WithdrawalStatus
+	ApprovalTier string
+	TxHash       string
+	HSMSignature string
+	HSMKeyID     string
+	LedgerRef    string
+	RiskNote     string
+	MFAVerified  bool
+	ApprovedBy   string
+	MultisigSigs int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // LedgerBalance is the user's internal exchange balance (from ledger-service).

@@ -55,16 +55,42 @@ type WithdrawRequest struct {
 	ToAddress string `json:"to_address"`
 }
 
+type MFAVerifyRequest struct {
+	UserID string `json:"user_id"`
+	Code   string `json:"code"`
+}
+
+type ApproveWithdrawalRequest struct {
+	ApproverID string `json:"approver_id"`
+	Note       string `json:"note"`
+}
+
+type MultisigSignRequest struct {
+	KeyID    string `json:"key_id"`
+	SignerID string `json:"signer_id"`
+}
+
+type WhitelistAddressRequest struct {
+	UserID  string `json:"user_id"`
+	Address string `json:"address"`
+}
+
 type WithdrawalResponse struct {
-	ID        string `json:"id"`
-	UserID    string `json:"user_id"`
-	Asset     string `json:"asset"`
-	Amount    int64  `json:"amount"`
-	ToAddress string `json:"to_address"`
-	Status    string `json:"status"`
-	TxHash    string `json:"tx_hash"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID           string `json:"id"`
+	UserID       string `json:"user_id"`
+	Asset        string `json:"asset"`
+	Amount       int64  `json:"amount"`
+	ToAddress    string `json:"to_address"`
+	Status       string `json:"status"`
+	ApprovalTier string `json:"approval_tier"`
+	TxHash       string `json:"tx_hash"`
+	HSMKeyID     string `json:"hsm_key_id,omitempty"`
+	MFAVerified  bool   `json:"mfa_verified"`
+	ApprovedBy   string `json:"approved_by,omitempty"`
+	MultisigSigs int    `json:"multisig_sigs"`
+	RiskNote     string `json:"risk_note,omitempty"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 type ErrorResponse struct {
@@ -115,7 +141,10 @@ func ToDepositResponse(d model.Deposit) DepositResponse {
 func ToWithdrawalResponse(w model.Withdrawal) WithdrawalResponse {
 	return WithdrawalResponse{
 		ID: w.ID, UserID: w.UserID, Asset: w.Asset, Amount: w.Amount,
-		ToAddress: w.ToAddress, Status: string(w.Status), TxHash: w.TxHash,
+		ToAddress: w.ToAddress, Status: string(w.Status),
+		ApprovalTier: w.ApprovalTier, TxHash: w.TxHash, HSMKeyID: w.HSMKeyID,
+		MFAVerified: w.MFAVerified, ApprovedBy: w.ApprovedBy,
+		MultisigSigs: w.MultisigSigs, RiskNote: w.RiskNote,
 		CreatedAt: w.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: w.UpdatedAt.Format(time.RFC3339),
 	}

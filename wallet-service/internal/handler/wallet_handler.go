@@ -26,6 +26,7 @@ func (h *WalletHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/wallet/address", h.handleCreateAddress)
 	mux.HandleFunc("/api/v1/wallet/deposit/confirm", h.handleConfirmDeposit)
 	mux.HandleFunc("/api/v1/wallet/withdraw", h.handleWithdraw)
+	mux.HandleFunc("/api/v1/wallet/whitelist", h.handleWhitelist)
 	mux.HandleFunc("/api/v1/wallet/", h.handleWallet)
 }
 
@@ -110,41 +111,131 @@ func (h *WalletHandler) handleWithdraw(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusCreated, dto.ToWithdrawalResponse(withdrawal))
 }
 
-func (h *WalletHandler) handleWallet(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
+func (h *WalletHandler) handleWhitelist(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
 		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "method not allowed"))
 		return
 	}
+	var req dto.WhitelistAddressRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "invalid JSON body"))
+		return
+	}
+	h.svc.WhitelistAddress(req.UserID, req.Address)
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "whitelisted"})
+}
 
+func (h *WalletHandler) handleWallet(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, apiPrefix)
 	parts := strings.Split(path, "/")
 
 	switch parts[0] {
 	case "balance":
-		if len(parts) < 3 {
-			httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "user_id and asset required"))
-			return
-		}
-		bal, err := h.svc.GetLedgerBalance(r.Context(), parts[1], parts[2])
-		if err != nil {
-			httputil.WriteError(w, err)
-			return
-		}
-		httputil.WriteJSON(w, http.StatusOK, dto.ToBalanceResponse(bal))
-
+		h.handleBalance(w, r, parts)
 	case "withdrawal":
-		if len(parts) < 2 {
-			httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "withdrawal id required"))
-			return
-		}
-		wd, err := h.svc.GetWithdrawal(parts[1])
-		if err != nil {
-			httputil.WriteError(w, err)
-			return
-		}
-		httputil.WriteJSON(w, http.StatusOK, dto.ToWithdrawalResponse(wd))
-
+		h.handleWithdrawalActions(w, r, parts)
 	default:
 		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "not found"))
 	}
+}
+
+func (h *WalletHandler) handleBalance(w http.ResponseWriter, r *http.Request, parts []string) {
+	if r.Method != http.MethodGet || len(parts) < 3 {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "user_id and asset required"))
+		return
+	}
+	bal, err := h.svc.GetLedgerBalance(r.Context(), parts[1], parts[2])
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, dto.ToBalanceResponse(bal))
+}
+
+func (h *WalletHandler) handleWithdrawalActions(w http.ResponseWriter, r *http.Request, parts []string) {
+	if len(parts) < 2 {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "withdrawal id required"))
+		return
+	}
+	withdrawalID := parts[1]
+
+	// Sub-actions: /withdrawal/{id}/verify-mfa, /approve, /multisig-sign
+	if len(parts) >= 3 {
+		switch parts[2] {
+		case "verify-mfa":
+			h.handleVerifyMFA(w, r, withdrawalID)
+			return
+		case "approve":
+			h.handleApprove(w, r, withdrawalID)
+			return
+		case "multisig-sign":
+			h.handleMultisigSign(w, r, withdrawalID)
+			return
+		}
+	}
+
+	if r.Method != http.MethodGet {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "method not allowed"))
+		return
+	}
+	wd, err := h.svc.GetWithdrawal(withdrawalID)
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, dto.ToWithdrawalResponse(wd))
+}
+
+func (h *WalletHandler) handleVerifyMFA(w http.ResponseWriter, r *http.Request, withdrawalID string) {
+	if r.Method != http.MethodPost {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "method not allowed"))
+		return
+	}
+	var req dto.MFAVerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "invalid JSON body"))
+		return
+	}
+	wd, err := h.svc.VerifyMFA(r.Context(), withdrawalID, req.UserID, req.Code)
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, dto.ToWithdrawalResponse(wd))
+}
+
+func (h *WalletHandler) handleApprove(w http.ResponseWriter, r *http.Request, withdrawalID string) {
+	if r.Method != http.MethodPost {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "method not allowed"))
+		return
+	}
+	var req dto.ApproveWithdrawalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "invalid JSON body"))
+		return
+	}
+	wd, err := h.svc.ApproveWithdrawal(r.Context(), withdrawalID, req.ApproverID, req.Note)
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, dto.ToWithdrawalResponse(wd))
+}
+
+func (h *WalletHandler) handleMultisigSign(w http.ResponseWriter, r *http.Request, withdrawalID string) {
+	if r.Method != http.MethodPost {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "method not allowed"))
+		return
+	}
+	var req dto.MultisigSignRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "invalid JSON body"))
+		return
+	}
+	wd, err := h.svc.MultisigSign(r.Context(), withdrawalID, req.KeyID, req.SignerID)
+	if err != nil {
+		httputil.WriteError(w, err)
+		return
+	}
+	httputil.WriteJSON(w, http.StatusOK, dto.ToWithdrawalResponse(wd))
 }

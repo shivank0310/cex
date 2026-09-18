@@ -14,6 +14,11 @@ const (
 	CodeDepositDuplicate     Code = "DEPOSIT_DUPLICATE"
 	CodeBlockchainError      Code = "BLOCKCHAIN_ERROR"
 	CodeLedgerError          Code = "LEDGER_ERROR"
+	CodeMFARequired          Code = "MFA_REQUIRED"
+	CodeMFAInvalid           Code = "MFA_INVALID"
+	CodeApprovalRequired     Code = "APPROVAL_REQUIRED"
+	CodeMultisigError        Code = "MULTISIG_ERROR"
+	CodeWithdrawalPending    Code = "WITHDRAWAL_PENDING"
 	CodeInternal             Code = "INTERNAL_ERROR"
 )
 
