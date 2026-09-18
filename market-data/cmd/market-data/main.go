@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/shivank0310/cex.git/market-data/internal/cache"
+	"github.com/shivank0310/cex.git/market-data/internal/client"
 	"github.com/shivank0310/cex.git/market-data/internal/config"
 	"github.com/shivank0310/cex.git/market-data/internal/handler"
 	"github.com/shivank0310/cex.git/market-data/internal/service"
@@ -28,7 +29,7 @@ func main() {
 	}
 
 	st := store.New()
-	svc := newMarketDataService(st)
+	svc := newMarketDataService(cfg, st)
 	marketHandler := handler.NewMarketHandler(svc)
 
 	mux := http.NewServeMux()
@@ -62,17 +63,31 @@ func main() {
 	}
 }
 
-func newMarketDataService(st *store.Store) *service.MarketDataService {
-	if os.Getenv("REDIS_ADDR") == "" {
-		log.Println("REDIS_ADDR not set — market-data cache disabled (in-memory only)")
-		return service.NewMarketDataService(st)
+func newMarketDataService(cfg config.Config, st *store.Store) *service.MarketDataService {
+	var binanceClient *client.BinanceAdapterClient
+	if cfg.BinanceAdapterURL != "" && len(cfg.ExternalSymbols) > 0 {
+		binanceClient = client.NewBinanceAdapterClient(cfg.BinanceAdapterURL, cfg.ExternalSymbols)
+		log.Printf("Binance market fallback enabled for: %v", cfg.ExternalSymbols)
 	}
 
-	rcfg := redis.ConfigFromEnv()
-	client, err := redis.NewClient(rcfg)
-	if err != nil {
-		log.Fatalf("redis connect failed: %v", err)
+	var marketCache *cache.MarketCache
+	if os.Getenv("REDIS_ADDR") != "" {
+		rcfg := redis.ConfigFromEnv()
+		redisClient, err := redis.NewClient(rcfg)
+		if err != nil {
+			log.Fatalf("redis connect failed: %v", err)
+		}
+		log.Printf("Redis cache enabled (addr: %s)", rcfg.Addr)
+		marketCache = cache.NewMarketCache(redisClient, 5*time.Second)
+	} else {
+		log.Println("REDIS_ADDR not set — market-data cache disabled (in-memory only)")
 	}
-	log.Printf("Redis cache enabled (addr: %s)", rcfg.Addr)
-	return service.NewMarketDataServiceWithCache(st, cache.NewMarketCache(client, 5*time.Second))
+
+	if binanceClient != nil {
+		return service.NewMarketDataServiceWithBinance(st, marketCache, binanceClient)
+	}
+	if marketCache != nil {
+		return service.NewMarketDataServiceWithCache(st, marketCache)
+	}
+	return service.NewMarketDataService(st)
 }

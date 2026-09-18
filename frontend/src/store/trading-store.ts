@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { DEFAULT_SYMBOL, DEMO_TOKENS } from "@/lib/constants";
+import { DEFAULT_SYMBOL } from "@/lib/constants";
 
 interface TradingState {
   symbol: string;
@@ -11,6 +11,7 @@ interface TradingState {
   quantity: string;
   setSymbol: (s: string) => void;
   setUserId: (id: string) => void;
+  setAuthToken: (token: string) => void;
   setSide: (s: "BUY" | "SELL") => void;
   setOrderType: (t: "LIMIT" | "MARKET") => void;
   setPrice: (p: string) => void;
@@ -19,18 +20,15 @@ interface TradingState {
 
 export const useTradingStore = create<TradingState>((set) => ({
   symbol: DEFAULT_SYMBOL,
-  userId: "user-a",
-  authToken: DEMO_TOKENS["user-a"],
+  userId: "",
+  authToken: "",
   side: "BUY",
   orderType: "LIMIT",
   price: "",
   quantity: "",
   setSymbol: (symbol) => set({ symbol }),
-  setUserId: (userId) =>
-    set({
-      userId,
-      authToken: DEMO_TOKENS[userId as keyof typeof DEMO_TOKENS] ?? DEMO_TOKENS["user-a"],
-    }),
+  setUserId: (userId) => set({ userId }),
+  setAuthToken: (authToken) => set({ authToken }),
   setSide: (side) => set({ side }),
   setOrderType: (orderType) => set({ orderType }),
   setPrice: (price) => set({ price }),

@@ -104,3 +104,28 @@ export interface ApiError {
   code: string;
   message: string;
 }
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  username: string;
+  role: string;
+  status: string;
+  kyc_status: string;
+  two_fa_enabled: boolean;
+}
+
+export interface AuthTokens {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  access_expires_at: string;
+  refresh_expires_at: string;
+}
+
+export interface AuthResponse {
+  user: AuthUser;
+  token: AuthTokens;
+}
+
+export type TradingVenue = "internal" | "binance";

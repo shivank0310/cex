@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/shivank0310/cex.git/binance-adapter-service/internal/apperrors"
@@ -12,6 +13,7 @@ import (
 )
 
 const ordersPrefix = "/api/v1/binance/orders/"
+const marketPrefix = "/api/v1/binance/market/"
 
 type AdapterHandler struct {
 	svc *service.AdapterService
@@ -29,6 +31,7 @@ func (h *AdapterHandler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/binance/ping", h.handlePing)
 	mux.HandleFunc("/api/v1/binance/account", h.handleAccount)
 	mux.HandleFunc("/api/v1/binance/ticker/", h.handleTicker)
+	mux.HandleFunc("/api/v1/binance/market/", h.handleMarket)
 	mux.HandleFunc("/api/v1/binance/orders", h.handleOrders)
 	mux.HandleFunc("/api/v1/binance/orders/", h.handleOrderByID)
 }
@@ -56,6 +59,79 @@ func (h *AdapterHandler) handleAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, account)
+}
+
+func (h *AdapterHandler) handleMarket(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "method not allowed"))
+		return
+	}
+
+	path := strings.TrimPrefix(r.URL.Path, marketPrefix)
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "not found"))
+		return
+	}
+
+	resource := parts[0]
+	symbol := strings.Join(parts[1:], "/")
+	if symbol == "" {
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "symbol required"))
+		return
+	}
+
+	switch resource {
+	case "ticker":
+		ticker, err := h.svc.GetMarketTicker(r.Context(), symbol)
+		if err != nil {
+			httputil.WriteError(w, err)
+			return
+		}
+		httputil.WriteJSON(w, http.StatusOK, ticker)
+	case "orderbook":
+		limit := parseLimit(r, 20)
+		book, err := h.svc.GetMarketOrderBook(r.Context(), symbol, limit)
+		if err != nil {
+			httputil.WriteError(w, err)
+			return
+		}
+		httputil.WriteJSON(w, http.StatusOK, book)
+	case "trades":
+		limit := parseLimit(r, 30)
+		trades, err := h.svc.GetMarketTrades(r.Context(), symbol, limit)
+		if err != nil {
+			httputil.WriteError(w, err)
+			return
+		}
+		httputil.WriteJSON(w, http.StatusOK, trades)
+	case "candles":
+		interval := r.URL.Query().Get("interval")
+		if interval == "" {
+			interval = "1m"
+		}
+		limit := parseLimit(r, 60)
+		candles, err := h.svc.GetMarketCandles(r.Context(), symbol, interval, limit)
+		if err != nil {
+			httputil.WriteError(w, err)
+			return
+		}
+		httputil.WriteJSON(w, http.StatusOK, candles)
+	default:
+		httputil.WriteError(w, apperrors.New(apperrors.CodeInvalidRequest, "not found"))
+	}
+}
+
+func parseLimit(r *http.Request, defaultLimit int) int {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return defaultLimit
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return defaultLimit
+	}
+	return n
 }
 
 func (h *AdapterHandler) handleTicker(w http.ResponseWriter, r *http.Request) {

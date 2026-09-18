@@ -8,10 +8,12 @@ export const TRADING_PAIRS = [
   "SOL/USDT",
 ] as const;
 
-export const DEMO_TOKENS = {
-  "user-a": "token-user-a",
-  "seller-1": "token-seller",
-} as const;
+/** Symbols routed to binance-adapter-service when ROUTE_BINANCE=1 on order-service. */
+export const BINANCE_VENUE_SYMBOLS = new Set<string>(["BTC/USDT"]);
+
+export function getTradingVenue(symbol: string): "binance" | "internal" {
+  return BINANCE_VENUE_SYMBOLS.has(symbol) ? "binance" : "internal";
+}
 
 export const FEATURES = [
   {
@@ -35,13 +37,13 @@ export const FEATURES = [
     icon: "BarChart3",
   },
   {
-    title: "Blockchain Service",
-    description: "EVM isolation layer for deposits, withdrawals, and treasury — not order matching.",
+    title: "Binance Adapter",
+    description: "BTC/USDT orders route to binance-adapter-service for external liquidity execution.",
     icon: "Link",
   },
   {
     title: "Enterprise Security",
-    description: "Rate limiting, session management, risk checks, and withdrawal reservations.",
+    description: "JWT auth, API gateway, rate limiting, session management, and risk checks.",
     icon: "Shield",
   },
 ] as const;
@@ -50,5 +52,5 @@ export const STATS = [
   { label: "Microservices", value: "12+" },
   { label: "Order Types", value: "Limit/Market" },
   { label: "Matching", value: "Off-chain" },
-  { label: "Blockchains", value: "50+" },
+  { label: "Venues", value: "Internal + Binance" },
 ] as const;

@@ -19,6 +19,7 @@ import (
 	"github.com/shivank0310/cex.git/order-service/internal/service"
 	"github.com/shivank0310/cex.git/order-service/internal/validator"
 	"github.com/shivank0310/cex.git/pkg/health"
+	jwtpkg "github.com/shivank0310/cex.git/pkg/jwt"
 	"github.com/shivank0310/cex.git/pkg/kafka"
 	"github.com/shivank0310/cex.git/pkg/redis"
 )
@@ -127,23 +128,36 @@ func newOrderService(cfg config.Config, pipeline *validator.Pipeline, registry *
 }
 
 func newAuthenticator() auth.Authenticator {
-	static := auth.NewStaticAuthenticator(map[string]string{
-		"token-user-a": "user-a",
-		"token-seller": "seller-1",
-	})
+	var inner auth.Authenticator
+
+	if secret := os.Getenv("JWT_SECRET"); secret != "" {
+		issuer := os.Getenv("JWT_ISSUER")
+		if issuer == "" {
+			issuer = "cex-auth"
+		}
+		mgr := jwtpkg.NewManager(secret, issuer, 15*time.Minute)
+		inner = auth.NewJWTAuthenticator(mgr)
+		log.Println("JWT authentication enabled (auth-service tokens)")
+	} else {
+		inner = auth.NewStaticAuthenticator(map[string]string{
+			"token-user-a": "user-a",
+			"token-seller": "seller-1",
+		})
+		log.Println("static token authentication enabled (dev mode)")
+	}
 
 	if os.Getenv("REDIS_ADDR") == "" {
-		return static
+		return inner
 	}
 
 	rcfg := redis.ConfigFromEnv()
 	client, err := redis.NewClient(rcfg)
 	if err != nil {
 		log.Printf("redis session cache unavailable: %v", err)
-		return static
+		return inner
 	}
 	sessions := redis.NewSessionStore(redis.NewCache(client), 24*time.Hour)
-	return auth.NewRedisAuthenticator(static, sessions)
+	return auth.NewRedisAuthenticator(inner, sessions)
 }
 
 func rootWithRateLimit(next http.Handler) http.Handler {

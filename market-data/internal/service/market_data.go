@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/shivank0310/cex.git/market-data/internal/cache"
+	"github.com/shivank0310/cex.git/market-data/internal/client"
 	"github.com/shivank0310/cex.git/market-data/internal/dto"
 	"github.com/shivank0310/cex.git/market-data/internal/model"
 	"github.com/shivank0310/cex.git/market-data/internal/store"
@@ -14,8 +15,9 @@ import (
 // MarketDataService consumes Kafka events and serves market data queries.
 // Matching engine stays in RAM; Redis is used only as a read cache layer here.
 type MarketDataService struct {
-	store *store.Store
-	cache *cache.MarketCache // optional Redis cache
+	store   *store.Store
+	cache   *cache.MarketCache // optional Redis cache
+	binance *client.BinanceAdapterClient
 }
 
 func NewMarketDataService(st *store.Store) *MarketDataService {
@@ -24,6 +26,10 @@ func NewMarketDataService(st *store.Store) *MarketDataService {
 
 func NewMarketDataServiceWithCache(st *store.Store, mc *cache.MarketCache) *MarketDataService {
 	return &MarketDataService{store: st, cache: mc}
+}
+
+func NewMarketDataServiceWithBinance(st *store.Store, mc *cache.MarketCache, binance *client.BinanceAdapterClient) *MarketDataService {
+	return &MarketDataService{store: st, cache: mc, binance: binance}
 }
 
 // Handle processes incoming Kafka events and updates RAM store + Redis cache.
@@ -93,6 +99,9 @@ func (s *MarketDataService) GetTicker(ctx context.Context, symbol string) (model
 
 	t, ok := s.store.Ticker(symbol)
 	if !ok || t.Symbol == "" {
+		if s.binance != nil && s.binance.IsExternal(symbol) {
+			return s.binance.GetTicker(ctx, symbol)
+		}
 		return model.Ticker{}, fmt.Errorf("ticker not found for symbol: %s", symbol)
 	}
 	if s.cache != nil {
@@ -102,7 +111,25 @@ func (s *MarketDataService) GetTicker(ctx context.Context, symbol string) (model
 }
 
 func (s *MarketDataService) GetAllTickers() []model.Ticker {
-	return s.store.AllTickers()
+	tickers := s.store.AllTickers()
+	if s.binance == nil {
+		return tickers
+	}
+
+	seen := make(map[string]bool, len(tickers))
+	for _, t := range tickers {
+		seen[t.Symbol] = true
+	}
+	for _, symbol := range s.binance.ExternalSymbols() {
+		if seen[symbol] {
+			continue
+		}
+		t, err := s.binance.GetTicker(context.Background(), symbol)
+		if err == nil {
+			tickers = append(tickers, t)
+		}
+	}
+	return tickers
 }
 
 func (s *MarketDataService) GetOrderBook(ctx context.Context, symbol string) (model.OrderBook, error) {
@@ -114,6 +141,9 @@ func (s *MarketDataService) GetOrderBook(ctx context.Context, symbol string) (mo
 
 	book, ok := s.store.OrderBook(symbol)
 	if !ok || book.Symbol == "" {
+		if s.binance != nil && s.binance.IsExternal(symbol) {
+			return s.binance.GetOrderBook(ctx, symbol, 20)
+		}
 		return model.OrderBook{}, fmt.Errorf("order book not found for symbol: %s", symbol)
 	}
 	if s.cache != nil {
@@ -131,15 +161,26 @@ func (s *MarketDataService) GetTrades(ctx context.Context, symbol string, limit 
 			return dtoToTrades(cached)
 		}
 	}
-	return s.store.Trades(symbol, limit)
+	trades := s.store.Trades(symbol, limit)
+	if len(trades) == 0 && s.binance != nil && s.binance.IsExternal(symbol) {
+		remote, err := s.binance.GetTrades(ctx, symbol, limit)
+		if err == nil {
+			return remote
+		}
+	}
+	return trades
 }
 
 func (s *MarketDataService) GetCandles(symbol, interval string, limit int) ([]model.Candle, error) {
+	interval = model.NormalizeInterval(interval)
 	if _, err := model.ParseInterval(interval); err != nil {
 		return nil, err
 	}
 	candles, ok := s.store.Candles(symbol, interval, limit)
-	if !ok {
+	if !ok || len(candles) == 0 {
+		if s.binance != nil && s.binance.IsExternal(symbol) {
+			return s.binance.GetCandles(context.Background(), symbol, interval, limit)
+		}
 		return nil, fmt.Errorf("candles not found for symbol: %s", symbol)
 	}
 	return candles, nil

@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { createDepositAddress, getBalance, requestWithdrawal } from "@/lib/api/wallet";
 import { formatQuantity, parseQuantity, shortAddress } from "@/lib/format";
-import { useTradingStore } from "@/store/trading-store";
+import { useAuthStore } from "@/store/auth-store";
 import type { Balance, WalletAddress } from "@/types";
 
 export function WalletPanel() {
-  const { userId } = useTradingStore();
+  const user = useAuthStore((s) => s.user);
+  const userId = user?.id ?? "";
   const [asset, setAsset] = useState("USDT");
   const [balance, setBalance] = useState<Balance | null>(null);
   const [address, setAddress] = useState<WalletAddress | null>(null);
@@ -18,6 +19,7 @@ export function WalletPanel() {
   const [msg, setMsg] = useState("");
 
   async function loadBalance() {
+    if (!userId) return;
     try {
       const b = await getBalance(userId, asset);
       setBalance(b);
@@ -26,7 +28,12 @@ export function WalletPanel() {
     }
   }
 
+  useEffect(() => {
+    if (userId) loadBalance();
+  }, [userId, asset]);
+
   async function handleDepositAddress() {
+    if (!userId) return;
     setLoading(true);
     setMsg("");
     try {
@@ -42,6 +49,7 @@ export function WalletPanel() {
   }
 
   async function handleWithdraw() {
+    if (!userId) return;
     setLoading(true);
     setMsg("");
     try {
@@ -65,11 +73,12 @@ export function WalletPanel() {
     <div className="grid gap-6 lg:grid-cols-2">
       <div className="rounded-2xl border border-white/10 bg-[#12121a] p-6">
         <h3 className="text-lg font-semibold text-white">Balances</h3>
+        <p className="mt-1 text-xs text-slate-500">User: {user?.email}</p>
         <div className="mt-4 flex gap-2">
           {["USDT", "BTC"].map((a) => (
             <button
               key={a}
-              onClick={() => { setAsset(a); loadBalance(); }}
+              onClick={() => setAsset(a)}
               className={`rounded-lg px-4 py-2 text-sm font-medium ${asset === a ? "bg-violet-600 text-white" : "bg-white/5 text-slate-400"}`}
             >
               {a}
@@ -77,7 +86,7 @@ export function WalletPanel() {
           ))}
           <Button size="sm" variant="ghost" onClick={loadBalance}>Refresh</Button>
         </div>
-        {balance && (
+        {balance ? (
           <div className="mt-6 grid grid-cols-3 gap-4">
             <div>
               <p className="text-xs text-slate-500">Available</p>
@@ -92,6 +101,10 @@ export function WalletPanel() {
               <p className="text-xl font-mono text-white">{formatQuantity(balance.total)}</p>
             </div>
           </div>
+        ) : (
+          <p className="mt-6 text-sm text-slate-500">
+            No balance yet — deposit funds or contact admin to credit your ledger account.
+          </p>
         )}
       </div>
 
@@ -100,7 +113,7 @@ export function WalletPanel() {
         <p className="mt-2 text-sm text-slate-400">
           On-chain deposit → blockchain-service → ledger credit
         </p>
-        <Button className="mt-4" onClick={handleDepositAddress} disabled={loading}>
+        <Button className="mt-4" onClick={handleDepositAddress} disabled={loading || !userId}>
           Get Deposit Address
         </Button>
         {address && (
@@ -127,7 +140,7 @@ export function WalletPanel() {
             className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white"
           />
         </div>
-        <Button className="mt-4" variant="secondary" onClick={handleWithdraw} disabled={loading}>
+        <Button className="mt-4" variant="secondary" onClick={handleWithdraw} disabled={loading || !userId}>
           Request Withdrawal
         </Button>
         {msg && <p className="mt-3 text-sm text-cyan-300">{msg}</p>}

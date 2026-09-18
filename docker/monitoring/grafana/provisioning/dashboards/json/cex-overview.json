@@ -1,0 +1,25 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "content": "# CEX Monitoring\nService health via Prometheus `/health` scrapes.", "mode": "markdown" },
+      "title": "CEX",
+      "type": "text"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["cex"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "CEX Overview",
+  "uid": "cex-overview",
+  "version": 1
+}

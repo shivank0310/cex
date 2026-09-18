@@ -11,11 +11,14 @@ scrape_configs:
     metrics_path: /health
     static_configs:
       - targets:
+          - api-gateway:8080
+          - binance-adapter-service:8086
           - order-service:8081
           - market-data:8082
           - ledger-service:8083
           - wallet-service:8084
           - blockchain-service:8085
+          - admin-service:8087
           - auth-service:8090
           - user-service:8091
           - matching-service:8092

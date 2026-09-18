@@ -49,6 +49,242 @@ Buyer:  USDT -30,330   BTC +0.30
 Seller: BTC  -0.30     USDT +30,330
 ```
 
+## API Gateway
+
+Location: `api-gateway/`
+
+The **front door** of the CEX. The frontend talks to one gateway instead of calling each microservice directly.
+
+```
+Frontend
+    │
+    ▼
+API Gateway (:8080)
+    │
+    ├── /api/auth      → auth-service
+    ├── /api/users     → user-service
+    ├── /api/orders    → order-service
+    ├── /api/wallet    → wallet-service
+    ├── /api/market    → market-data
+    ├── /api/admin     → admin-service
+    └── /api/v1/*      → same services (versioned paths)
+```
+
+Production edge stack:
+
+```
+Internet → Nginx (TLS) → API Gateway → internal services
+```
+
+### Gateway responsibilities
+
+| Concern | Implementation |
+|---------|----------------|
+| Routing | Path-based reverse proxy to all CEX services |
+| API versioning | `/api/v1/*` passthrough + shorter `/api/*` aliases |
+| Auth forwarding | `Authorization`, `X-Admin-API-Key` |
+| Rate limiting | Redis (or in-memory fallback) |
+| CORS | Configurable allowed origins |
+| Request logging | Structured access logs with `X-Request-ID` |
+| TLS | Optional via `TLS_CERT` / `TLS_KEY` on gateway |
+
+### Examples
+
+```bash
+# Short path (rewritten to /api/v1/orders on order-service)
+curl -X POST http://localhost:8080/api/orders \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"symbol":"BTC/USDT","side":"BUY","type":"LIMIT","price":101100,"quantity":30}'
+
+# Versioned path (used by frontend today)
+curl http://localhost:8080/api/v1/market/tickers
+
+# Via Nginx edge (port 80)
+curl http://localhost/api/v1/auth/login ...
+```
+
+### Run api-gateway
+
+```bash
+ORDER_SERVICE_URL=http://localhost:8081 \
+AUTH_SERVICE_URL=http://localhost:8090 \
+USER_SERVICE_URL=http://localhost:8091 \
+go run ./api-gateway/cmd/api-gateway
+```
+
+Env vars: `*_SERVICE_URL` for each backend, `REDIS_ADDR`, `RATE_LIMIT_PER_MINUTE`, `CORS_ALLOWED_ORIGINS`, `TLS_CERT`, `TLS_KEY`.
+
+### Run gateway tests
+
+```bash
+go test ./api-gateway/tests/ -v
+```
+
+## Auth Service
+
+Location: `auth-service/`
+
+Handles registration, login, password hashing (bcrypt), JWT access tokens, refresh tokens, logout, and session management. **2FA is reserved for a later phase.**
+
+### Login flow
+
+```
+Frontend
+   │  email + password
+   ▼
+API Gateway
+   ▼
+Auth Service
+   ├── Verify password (bcrypt)
+   ├── Create access token (JWT)
+   └── Create refresh token (opaque session)
+   ▼
+Frontend stores tokens
+```
+
+On **register**, auth-service creates the user profile in user-service (PostgreSQL) first, then stores credentials locally:
+
+```
+Auth Service → User Service → PostgreSQL
+```
+
+Protected requests send:
+
+```
+Authorization: Bearer <JWT>
+```
+
+Access tokens identify the user only (`sub`, `role`, `exp`). They are **not** the source of truth for wallet balance, order status, or trade history — those belong to ledger, wallet, and order services.
+
+Example JWT payload:
+
+```json
+{
+  "sub": "user-123",
+  "role": "TRADER",
+  "exp": 1780000000
+}
+```
+
+### HTTP API (port 8090)
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/v1/auth/register` | Create account + issue tokens |
+| `POST /api/v1/auth/login` | Verify credentials + issue tokens |
+| `POST /api/v1/auth/refresh` | Rotate refresh token + new access token |
+| `POST /api/v1/auth/logout` | Revoke refresh session |
+| `GET /api/v1/auth/me` | Current user from bearer JWT |
+
+```bash
+# Register
+curl -X POST http://localhost:8090/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"trader@cex.test","password":"password123"}'
+
+# Login
+curl -X POST http://localhost:8090/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"trader@cex.test","password":"password123"}'
+
+# Use access token on protected routes (e.g. order-service with JWT_SECRET set)
+curl http://localhost:8090/api/v1/auth/me \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Via API gateway: `http://localhost/api/v1/auth/...`
+
+### Run auth-service
+
+```bash
+JWT_SECRET=cex-dev-jwt-secret-change-in-production go run ./auth-service/cmd/auth-service
+```
+
+Env vars: `JWT_SECRET`, `JWT_ISSUER`, `ACCESS_TOKEN_TTL` (default `15m`), `REFRESH_TOKEN_TTL` (default `168h`).
+
+### JWT integration (order-service)
+
+When `JWT_SECRET` is set on order-service, bearer tokens from auth-service are validated via shared `pkg/jwt`:
+
+```bash
+JWT_SECRET=cex-dev-jwt-secret-change-in-production go run ./order-service/cmd/order-service
+```
+
+### Run auth tests
+
+```bash
+go test ./auth-service/tests/ ./pkg/jwt/ -v
+```
+
+## User Service
+
+Location: `user-service/`
+
+Stores user profile information in **PostgreSQL**. Credentials stay in auth-service; user-service is the source of truth for profile fields.
+
+```
+User
+├── ID
+├── email
+├── username
+├── status
+├── KYC status
+├── created_at
+└── updated_at
+```
+
+### Flow
+
+```
+Auth Service
+      │  POST /api/v1/users (on register)
+      ▼
+User Service
+      │
+      ▼
+PostgreSQL (users.accounts)
+```
+
+### HTTP API (port 8091)
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /api/v1/users` | Create user profile |
+| `GET /api/v1/users/:id` | Get user by ID |
+| `GET /api/v1/users/by-email/:email` | Get user by email |
+| `PATCH /api/v1/users/:id` | Update username, status, kyc_status |
+
+```bash
+# Create profile (normally called by auth-service)
+curl -X POST http://localhost:8091/api/v1/users \
+  -H "Content-Type: application/json" \
+  -d '{"email":"trader@cex.test","username":"trader1"}'
+
+# Get user
+curl http://localhost:8091/api/v1/users/user-abc123
+
+# Update KYC status
+curl -X PATCH http://localhost:8091/api/v1/users/user-abc123 \
+  -H "Content-Type: application/json" \
+  -d '{"kyc_status":"APPROVED"}'
+```
+
+### Run user-service
+
+```bash
+DATABASE_URL=postgres://cex:cex@localhost:5433/cex?sslmode=disable \
+go run ./user-service/cmd/user-service
+```
+
+Start PostgreSQL first (via Docker infra or full stack).
+
+### Run user tests
+
+```bash
+go test ./user-service/tests/ -v
+```
+
 ## Order Service
 
 Location: `order-service/`
@@ -455,6 +691,94 @@ Env vars: `EVM_RPC_URL` (future real RPC), `REQUIRED_CONFIRMATIONS` (default 12)
 go test ./blockchain-service/tests/ -v
 ```
 
+## Admin Service
+
+Location: `admin-service/`
+
+Operations control plane for the exchange. Provides a unified admin API for users, markets, trading pairs, fees, deposits, withdrawals, risk rules, KYC review, and system health — without coupling to other services' internal packages (HTTP only).
+
+### Dashboard & system status
+
+```bash
+# Dashboard stats (users, volumes)
+curl -H "X-Admin-API-Key: admin-dev-key" http://localhost:8087/api/v1/admin/dashboard
+
+# Probe matching engine, database, kafka, blockchain RPC
+curl -H "X-Admin-API-Key: admin-dev-key" http://localhost:8087/api/v1/admin/system/status
+```
+
+Example dashboard response:
+
+```
+Users              125,320
+Active Users         8,430
+BTC Volume         $12.4M
+ETH Volume          $7.8M
+```
+
+System status maps health probes to:
+
+| Component | Probed service |
+|-----------|----------------|
+| Matching Engine | order-service |
+| Database | ledger-service |
+| Kafka | market-data |
+| Blockchain RPC | blockchain-service |
+
+### HTTP API (port 8087)
+
+All routes under `/api/v1/admin/` require header `X-Admin-API-Key` (default dev key: `admin-dev-key`). `/health` is public.
+
+| Area | Endpoints |
+|------|-----------|
+| Dashboard | `GET /dashboard`, `GET /system/status` |
+| Users | `GET /users`, `GET /users/:id`, `PATCH /users/:id` |
+| Markets | `GET|POST /markets`, `PATCH /fees/:symbol` |
+| Deposits | `GET /deposits` |
+| Withdrawals | `GET /withdrawals`, `POST /withdrawals/:id/approve\|reject` |
+| KYC | `GET /kyc`, `POST /kyc/:id/approve\|reject` |
+| Risk | `GET /risk/rules`, `PATCH /risk/rules/:id` |
+
+```bash
+# Suspend a user
+curl -X PATCH http://localhost:8087/api/v1/admin/users/usr-001 \
+  -H "X-Admin-API-Key: admin-dev-key" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"SUSPENDED"}'
+
+# Update trading pair fees (symbol URL-encoded: BTC%2FUSDT)
+curl -X PATCH http://localhost:8087/api/v1/admin/fees/BTC%2FUSDT \
+  -H "X-Admin-API-Key: admin-dev-key" \
+  -H "Content-Type: application/json" \
+  -d '{"maker_fee_bps":5,"taker_fee_bps":10}'
+
+# Approve a pending withdrawal
+curl -X POST http://localhost:8087/api/v1/admin/withdrawals/wd-001/approve \
+  -H "X-Admin-API-Key: admin-dev-key"
+```
+
+Via API gateway:
+
+```bash
+curl -H "X-Admin-API-Key: admin-dev-key" http://localhost/api/v1/admin/dashboard
+```
+
+### Run admin-service
+
+```bash
+ADMIN_API_KEY=admin-dev-key \
+ORDER_SERVICE_URL=http://localhost:8081 \
+LEDGER_SERVICE_URL=http://localhost:8083 \
+BLOCKCHAIN_SERVICE_URL=http://localhost:8085 \
+go run ./admin-service/cmd/admin-service
+```
+
+### Run admin tests
+
+```bash
+go test ./admin-service/tests/ -v
+```
+
 ## Settlement Service
 
 Location: `settlement-service/`
@@ -528,7 +852,7 @@ KAFKA_BROKERS=localhost:9092 go run ./order-service/cmd/order-service
 ### Run event tests
 
 ```bash
-go test ./matching-engine/tests/ ./ledger-service/tests/ ./wallet-service/tests/ ./blockchain-service/tests/ ./settlement-service/tests/ ./market-data/tests/ ./notification-service/tests/ -v
+go test ./matching-engine/tests/ ./ledger-service/tests/ ./wallet-service/tests/ ./blockchain-service/tests/ ./api-gateway/tests/ ./auth-service/tests/ ./user-service/tests/ ./pkg/jwt/ ./admin-service/tests/ ./settlement-service/tests/ ./market-data/tests/ ./notification-service/tests/ -v
 ```
 
 ## On-Chain Contracts
@@ -561,6 +885,9 @@ cd contracts && make install && make test
 
 ```
 matching-engine/     ← order book, engine, settlement, Kafka publisher
+api-gateway/         ← front door: routing, CORS, rate limits, auth forwarding (port 8080)
+auth-service/        ← register, login, JWT, refresh tokens, sessions (port 8090)
+user-service/        ← user profiles in PostgreSQL (port 8091)
 frontend/            ← Next.js trading UI (React, 3D hero, API integration)
 contracts/           ← Solidity: vault, treasury, tokens (NOT order matching)
 order-service/       ← validation pipeline + HTTP API
@@ -568,6 +895,7 @@ market-data/         ← Kafka consumer + HTTP API (ticker, book, trades, candle
 ledger-service/      ← double-entry ledger HTTP API (settle-trade, deposit, balances)
 wallet-service/      ← blockchain wallets, deposits, withdrawals
 blockchain-service/  ← EVM isolation: wallets, deposits, withdrawals, tx tracking (port 8085)
+admin-service/       ← operations dashboard: users, markets, fees, KYC, risk, system status (port 8087)
 settlement-service/  ← Kafka consumer (trades → ledger → settlement events)
 notification-service/← Kafka consumer (orders, trades, settlement)
 pkg/contracts/       ← on-chain event signatures for blockchain-service
@@ -582,9 +910,19 @@ docker/              ← Docker Compose: all services + postgres, redis, kafka, 
 
 Location: `frontend/`
 
-Next.js 14 trading UI with 3D landing page, trading terminal, markets, and wallet.
+Next.js 14 UI connected to the full backend through **nginx → api-gateway**:
+
+```
+Frontend (/api/*) → nginx :80 → api-gateway :8080 → microservices
+```
+
+- **Auth**: `/login`, `/register` → auth-service (JWT persisted in browser)
+- **Trade**: orders with `Authorization: Bearer` → order-service (BTC/USDT → binance-adapter when `ROUTE_BINANCE=1`)
+- **Markets**: market-data tickers
+- **Wallet**: ledger balances, deposits, withdrawals
 
 ```bash
+docker compose -f docker/docker-compose.yml up --build
 cd frontend && npm install --legacy-peer-deps && npm run dev
 ```
 
@@ -603,7 +941,8 @@ docker compose -f docker/docker-compose.yml up --build
 | URL | Service |
 |-----|---------|
 | http://localhost | Nginx (frontend + API gateway) |
-| http://localhost:3000 | Grafana (admin / admin) |
+| http://localhost:3001 | Grafana (admin / admin) |
+| http://localhost:3002 | Frontend (Docker) |
 | http://localhost:9090 | Prometheus |
 
 Infrastructure only (for local Go dev):

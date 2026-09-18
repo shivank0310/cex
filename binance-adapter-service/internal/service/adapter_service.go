@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/shivank0310/cex.git/binance-adapter-service/internal/apperrors"
 	"github.com/shivank0310/cex.git/binance-adapter-service/internal/binance"
 	"github.com/shivank0310/cex.git/binance-adapter-service/internal/dto"
+	"github.com/shivank0310/cex.git/binance-adapter-service/internal/mapping"
 	"github.com/shivank0310/cex.git/binance-adapter-service/internal/repository"
+	"github.com/shivank0310/cex.git/matching-engine/pkg/decimal"
 )
 
 // AdapterService orchestrates Binance Spot API calls for the CEX.
@@ -117,6 +120,93 @@ func (s *AdapterService) GetTicker(ctx context.Context, symbol string) (dto.Tick
 		return dto.TickerResponse{}, err
 	}
 	return dto.TickerResponse{Symbol: ticker.Symbol, Price: ticker.Price, Venue: "binance"}, nil
+}
+
+func (s *AdapterService) GetMarketTicker(ctx context.Context, symbol string) (dto.MarketTickerResponse, error) {
+	t, err := s.provider.GetTicker24h(ctx, symbol)
+	if err != nil {
+		return dto.MarketTickerResponse{}, err
+	}
+	return dto.MarketTickerResponse{
+		Symbol:            t.Symbol,
+		LastPrice:         t.LastPrice,
+		BestBid:           t.BestBid,
+		BestAsk:           t.BestAsk,
+		High24h:           t.High24h,
+		Low24h:            t.Low24h,
+		Volume24h:         t.Volume24h,
+		QuoteVolume24h:    t.QuoteVolume24h,
+		PriceChange24h:    t.PriceChange24h,
+		PriceChangePct24h: t.PriceChangePct24h,
+		TradeCount24h:     t.TradeCount24h,
+		UpdatedAt:         time.Now().UTC().Format(time.RFC3339),
+		Venue:             "binance",
+	}, nil
+}
+
+func (s *AdapterService) GetMarketOrderBook(ctx context.Context, symbol string, limit int) (dto.MarketOrderBookResponse, error) {
+	book, err := s.provider.GetDepth(ctx, symbol, limit)
+	if err != nil {
+		return dto.MarketOrderBookResponse{}, err
+	}
+	resp := dto.MarketOrderBookResponse{
+		Symbol:    book.Symbol,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		Venue:     "binance",
+	}
+	for _, b := range book.Bids {
+		resp.Bids = append(resp.Bids, dto.DepthLevelResponse{Price: b.Price, Quantity: b.Quantity})
+	}
+	for _, a := range book.Asks {
+		resp.Asks = append(resp.Asks, dto.DepthLevelResponse{Price: a.Price, Quantity: a.Quantity})
+	}
+	return resp, nil
+}
+
+func (s *AdapterService) GetMarketTrades(ctx context.Context, symbol string, limit int) ([]dto.MarketTradeResponse, error) {
+	trades, err := s.provider.GetRecentTrades(ctx, symbol, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dto.MarketTradeResponse, len(trades))
+	for i, t := range trades {
+		out[i] = dto.MarketTradeResponse{
+			ID:        t.ID,
+			Symbol:    t.Symbol,
+			Price:     t.Price,
+			Quantity:  t.Quantity,
+			Notional:  decimal.Notional(t.Price, t.Quantity),
+			Timestamp: t.Timestamp.UTC().Format(time.RFC3339),
+			Venue:     "binance",
+		}
+	}
+	return out, nil
+}
+
+func (s *AdapterService) GetMarketCandles(ctx context.Context, symbol, interval string, limit int) ([]dto.MarketCandleResponse, error) {
+	interval = mapping.NormalizeInterval(interval)
+	klines, err := s.provider.GetKlines(ctx, symbol, interval, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dto.MarketCandleResponse, len(klines))
+	for i, k := range klines {
+		out[i] = dto.MarketCandleResponse{
+			Symbol:     symbol,
+			Interval:   interval,
+			OpenTime:   k.OpenTime.UTC().Format(time.RFC3339),
+			CloseTime:  k.CloseTime.UTC().Format(time.RFC3339),
+			Open:       k.Open,
+			High:       k.High,
+			Low:        k.Low,
+			Close:      k.Close,
+			Volume:     k.Volume,
+			QuoteVol:   k.QuoteVolume,
+			TradeCount: k.TradeCount,
+			Venue:      "binance",
+		}
+	}
+	return out, nil
 }
 
 func (s *AdapterService) Ping(ctx context.Context) error {

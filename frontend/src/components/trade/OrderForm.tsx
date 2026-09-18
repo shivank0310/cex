@@ -6,9 +6,12 @@ import { Button } from "@/components/ui/Button";
 import { placeOrder } from "@/lib/api/orders";
 import { parseQuantity } from "@/lib/format";
 import { TRADING_PAIRS } from "@/lib/constants";
+import { useIsAuthenticated } from "@/store/auth-store";
 import { useTradingStore } from "@/store/trading-store";
+import { VenueBadge } from "./VenueBadge";
 
 export function OrderForm() {
+  const isAuthenticated = useIsAuthenticated();
   const {
     symbol, setSymbol, side, setSide, orderType, setOrderType,
     price, setPrice, quantity, setQuantity, authToken,
@@ -18,6 +21,10 @@ export function OrderForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!isAuthenticated || !authToken) {
+      setMessage({ type: "err", text: "Sign in to place orders" });
+      return;
+    }
     setLoading(true);
     setMessage(null);
     try {
@@ -47,6 +54,10 @@ export function OrderForm() {
 
   return (
     <form onSubmit={handleSubmit} className="rounded-xl border border-white/10 bg-[#12121a] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="text-sm font-medium text-white">Place Order</span>
+        <VenueBadge symbol={symbol} />
+      </div>
       <div className="mb-4 flex gap-2">
         <button
           type="button"

@@ -51,5 +51,9 @@ type SpotProvider interface {
 	GetOrder(ctx context.Context, symbol, clientOrderID string) (OrderResult, error)
 	GetAccount(ctx context.Context) ([]AccountBalance, error)
 	GetTickerPrice(ctx context.Context, symbol string) (TickerPrice, error)
+	GetTicker24h(ctx context.Context, symbol string) (Ticker24h, error)
+	GetDepth(ctx context.Context, symbol string, limit int) (DepthSnapshot, error)
+	GetRecentTrades(ctx context.Context, symbol string, limit int) ([]MarketTrade, error)
+	GetKlines(ctx context.Context, symbol, interval string, limit int) ([]Kline, error)
 	Ping(ctx context.Context) error
 }

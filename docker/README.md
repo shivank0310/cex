@@ -29,23 +29,25 @@ Containerized deployment for the full CEX platform.
 
 | Container | Port | Role |
 |-----------|------|------|
-| **frontend** | 3000 | Next.js trading UI (3D landing, terminal) |
+| **frontend** | 3002 | Next.js trading UI (Docker; local dev uses :3000) |
 | **nginx** | 80 | API gateway |
 | **order-service** | 8081 | Orders + in-process matching engine |
+| **api-gateway** | 8080 | API front door (routing, CORS, rate limits) |
+| **binance-adapter-service** | 8086 | Binance Spot adapter (mock without API keys) |
 | **market-data** | 8082 | Tickers, order book, candles |
 | **ledger-service** | 8083 | Double-entry ledger |
 | **wallet-service** | 8084 | Deposits, withdrawals, balances |
 | **blockchain-service** | 8085 | EVM isolation layer |
 | **settlement-service** | 8096 | Trade settlement consumer |
 | **notification-service** | 8097 | Event notifications |
-| **auth-service** | 8090 | Stub (future) |
-| **user-service** | 8091 | Stub (future) |
+| **auth-service** | 8090 | Register, login, JWT, refresh tokens, sessions |
+| **user-service** | 8091 | User profiles (PostgreSQL) |
 | **matching-service** | 8092 | Stub (future standalone engine) |
-| **postgres** | 5432 | Persistence schema (future) |
-| **redis** | 6379 | Cache, sessions, rate limits |
+| **postgres** | internal only (full stack) / 5433 (infra) | PostgreSQL (users, ledger, wallet schemas) |
+| **redis** | internal only (full stack) / 6380 (infra) | Cache, sessions, rate limits |
 | **kafka** | 9092 | Event bus |
 | **prometheus** | 9090 | Metrics |
-| **grafana** | 3000 | Dashboards |
+| **grafana** | 3001 | Dashboards |
 
 ## Layout
 
@@ -71,8 +73,11 @@ docker/
 docker compose -f docker/docker-compose.yml up --build
 ```
 
-- Frontend + API: http://localhost
-- Grafana: http://localhost:3000 (admin / admin)
+- Frontend (Docker): http://localhost:3002
+- Frontend (local dev): http://localhost:3000
+- API via nginx: http://localhost:8088
+- API gateway (direct): http://localhost:8080
+- Grafana: http://localhost:3001 (admin / admin)
 - Prometheus: http://localhost:9090
 
 ### Infrastructure only
@@ -86,7 +91,7 @@ docker compose -f docker/docker-compose.infra.yml up -d
 Then run services locally:
 
 ```bash
-KAFKA_BROKERS=localhost:9092 REDIS_ADDR=localhost:6379 go run ./order-service/cmd/order-service
+KAFKA_BROKERS=localhost:9092 REDIS_ADDR=localhost:6380 go run ./order-service/cmd/order-service
 ```
 
 ## Build a single service
@@ -97,18 +102,21 @@ docker build -f docker/Dockerfile \
   -t cex/wallet-service .
 ```
 
-## API Gateway routes
+## API routing
 
-| Path | Service |
-|------|---------|
-| `/api/v1/auth/` | auth-service |
-| `/api/v1/users/` | user-service |
-| `/api/v1/orders` | order-service |
-| `/api/v1/matching/` | matching-service |
-| `/api/v1/market/` | market-data |
-| `/api/v1/ledger/` | ledger-service |
-| `/api/v1/wallet/` | wallet-service |
-| `/api/v1/blockchain/` | blockchain-service |
+Nginx (port 80) proxies `/api/*` to **api-gateway** (port 8080), which routes to internal services.
+
+| Gateway path | Service |
+|--------------|---------|
+| `/api/auth`, `/api/v1/auth` | auth-service |
+| `/api/users`, `/api/v1/users` | user-service |
+| `/api/orders`, `/api/v1/orders` | order-service |
+| `/api/matching`, `/api/v1/matching` | matching-service |
+| `/api/market`, `/api/v1/market` | market-data |
+| `/api/ledger`, `/api/v1/ledger` | ledger-service |
+| `/api/wallet`, `/api/v1/wallet` | wallet-service |
+| `/api/blockchain`, `/api/v1/blockchain` | blockchain-service |
+| `/api/admin`, `/api/v1/admin` | admin-service |
 
 ## Design notes
 

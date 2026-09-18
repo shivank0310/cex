@@ -75,6 +75,60 @@ type TickerResponse struct {
 	Venue  string `json:"venue"`
 }
 
+type MarketTickerResponse struct {
+	Symbol            string `json:"symbol"`
+	LastPrice         int64  `json:"last_price"`
+	BestBid           int64  `json:"best_bid"`
+	BestAsk           int64  `json:"best_ask"`
+	High24h           int64  `json:"high_24h"`
+	Low24h            int64  `json:"low_24h"`
+	Volume24h         int64  `json:"volume_24h"`
+	QuoteVolume24h    int64  `json:"quote_volume_24h"`
+	PriceChange24h    int64  `json:"price_change_24h"`
+	PriceChangePct24h int64  `json:"price_change_pct_24h"`
+	TradeCount24h     int    `json:"trade_count_24h"`
+	UpdatedAt         string `json:"updated_at"`
+	Venue             string `json:"venue"`
+}
+
+type MarketOrderBookResponse struct {
+	Symbol    string             `json:"symbol"`
+	Bids      []DepthLevelResponse `json:"bids"`
+	Asks      []DepthLevelResponse `json:"asks"`
+	UpdatedAt string             `json:"updated_at"`
+	Venue     string             `json:"venue"`
+}
+
+type DepthLevelResponse struct {
+	Price    int64 `json:"price"`
+	Quantity int64 `json:"quantity"`
+}
+
+type MarketTradeResponse struct {
+	ID        string `json:"id"`
+	Symbol    string `json:"symbol"`
+	Price     int64  `json:"price"`
+	Quantity  int64  `json:"quantity"`
+	Notional  int64  `json:"notional"`
+	Timestamp string `json:"timestamp"`
+	Venue     string `json:"venue"`
+}
+
+type MarketCandleResponse struct {
+	Symbol     string `json:"symbol"`
+	Interval   string `json:"interval"`
+	OpenTime   string `json:"open_time"`
+	CloseTime  string `json:"close_time"`
+	Open       int64  `json:"open"`
+	High       int64  `json:"high"`
+	Low        int64  `json:"low"`
+	Close      int64  `json:"close"`
+	Volume     int64  `json:"volume"`
+	QuoteVol   int64  `json:"quote_volume"`
+	TradeCount int    `json:"trade_count"`
+	Venue      string `json:"venue"`
+}
+
 type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`

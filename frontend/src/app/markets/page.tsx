@@ -54,7 +54,12 @@ export default function MarketsPage() {
                     <td className="px-4 py-3 text-right font-mono text-slate-300">{formatPrice(t.low_24h)}</td>
                     <td className="px-4 py-3 text-right font-mono text-slate-300">{t.volume_24h}</td>
                     <td className="px-4 py-3 text-right">
-                      <Link href="/trade" className="text-cyan-400 hover:underline">Trade</Link>
+                      <Link
+                        href={`/trade?symbol=${encodeURIComponent(t.symbol)}`}
+                        className="text-cyan-400 hover:underline"
+                      >
+                        Trade
+                      </Link>
                     </td>
                   </tr>
                 );

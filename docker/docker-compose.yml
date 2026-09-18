@@ -19,8 +19,7 @@ services:
       POSTGRES_USER: cex
       POSTGRES_PASSWORD: cex
       POSTGRES_DB: cex
-    ports:
-      - "5432:5432"
+    # No host port — avoids conflict with local Postgres on :5432; services use postgres:5432 internally
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
@@ -35,8 +34,7 @@ services:
   redis:
     image: redis:7-alpine
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
-    ports:
-      - "6379:6379"
+    # No host port — avoids conflict with local Redis on :6379; services use redis:6379 internally
     volumes:
       - redis_data:/data
       - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -49,20 +47,23 @@ services:
       - cex
 
   kafka:
-    image: bitnami/kafka:3.6
-    ports:
-      - "9092:9092"
+    image: apache/kafka:3.8.0
+    hostname: kafka
+    # No host port — avoids conflict with local Kafka on :9092; services use kafka:9092 internally
     environment:
-      KAFKA_CFG_NODE_ID: 0
-      KAFKA_CFG_PROCESS_ROLES: controller,broker
-      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
-      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
     healthcheck:
-      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
       interval: 10s
       timeout: 10s
       retries: 8
@@ -70,7 +71,7 @@ services:
       - cex
 
   kafka-init:
-    image: bitnami/kafka:3.6
+    image: apache/kafka:3.8.0
     depends_on:
       kafka:
         condition: service_healthy
@@ -78,7 +79,7 @@ services:
     command:
       - |
         for topic in orders trades orderbook ledger settlement notifications; do
-          kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $$topic --partitions 3 --replication-factor 1
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --create --if-not-exists --topic $$topic --partitions 3 --replication-factor 1
         done
         echo "Kafka topics ready."
     networks:
@@ -93,7 +94,7 @@ services:
       args:
         API_PROXY_URL: http://nginx:80
     ports:
-      - "3000:3000"
+      - "3002:3000"   # host 3002 — avoids conflict with local `npm run dev` on :3000
     environment:
       API_PROXY_URL: http://nginx:80
     depends_on:
@@ -101,22 +102,67 @@ services:
     networks:
       - cex
 
-  # ── API Gateway + Frontend static fallback ──────────────────────────────────
+  # ── API Gateway + Nginx (edge) + Frontend static fallback ───────────────────
+
+  api-gateway:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: api-gateway/cmd/api-gateway
+    environment:
+      HTTP_ADDR: ":8080"
+      REDIS_ADDR: redis:6379
+      RATE_LIMIT_PER_MINUTE: "300"
+      CORS_ALLOWED_ORIGINS: "*"
+      AUTH_SERVICE_URL: http://auth-service:8090
+      USER_SERVICE_URL: http://user-service:8091
+      ORDER_SERVICE_URL: http://order-service:8081
+      MARKET_DATA_URL: http://market-data:8082
+      LEDGER_SERVICE_URL: http://ledger-service:8083
+      WALLET_SERVICE_URL: http://wallet-service:8084
+      BLOCKCHAIN_SERVICE_URL: http://blockchain-service:8085
+      ADMIN_SERVICE_URL: http://admin-service:8087
+      MATCHING_SERVICE_URL: http://matching-service:8092
+    ports:
+      - "8080:8080"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      order-service:
+        condition: service_started
+      market-data:
+        condition: service_started
+      ledger-service:
+        condition: service_started
+      wallet-service:
+        condition: service_started
+      blockchain-service:
+        condition: service_started
+      admin-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/gateway/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
 
   nginx:
     image: nginx:1.25-alpine
     ports:
-      - "80:80"
+      - "8088:80"   # 8088 on host — avoids conflict with Apache/other services on :80
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./frontend:/usr/share/nginx/html:ro
     depends_on:
-      - order-service
-      - market-data
-      - ledger-service
-      - wallet-service
-      - blockchain-service
+      api-gateway:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost/gateway/health || exit 1"]
       interval: 10s
@@ -126,6 +172,25 @@ services:
       - cex
 
   # ── Core CEX Services ───────────────────────────────────────────────────────
+
+  binance-adapter-service:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: binance-adapter-service/cmd/binance-adapter-service
+    environment:
+      HTTP_ADDR: ":8086"
+      BINANCE_BASE_URL: https://testnet.binance.vision
+      # Omit BINANCE_API_KEY/SECRET for mock mode in dev
+    ports:
+      - "8086:8086"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8086/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
 
   order-service:
     <<: *go-service
@@ -138,6 +203,11 @@ services:
       HTTP_ADDR: ":8081"
       KAFKA_BROKERS: kafka:9092
       REDIS_ADDR: redis:6379
+      JWT_SECRET: cex-dev-jwt-secret-change-in-production
+      JWT_ISSUER: cex-auth
+      LEDGER_URL: http://ledger-service:8083
+      BINANCE_ADAPTER_URL: http://binance-adapter-service:8086
+      ROUTE_BINANCE: "1"
     ports:
       - "8081:8081"
     depends_on:
@@ -145,11 +215,16 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      binance-adapter-service:
+        condition: service_healthy
+      ledger-service:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8081/health || exit 1"]
-      interval: 15s
-      timeout: 3s
-      retries: 5
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 40s
 
   market-data:
     <<: *go-service
@@ -162,12 +237,16 @@ services:
       HTTP_ADDR: ":8082"
       KAFKA_BROKERS: kafka:9092
       REDIS_ADDR: redis:6379
+      BINANCE_ADAPTER_URL: http://binance-adapter-service:8086
+      EXTERNAL_SYMBOLS: BTC/USDT
     ports:
       - "8082:8082"
     depends_on:
       kafka-init:
         condition: service_completed_successfully
       redis:
+        condition: service_healthy
+      binance-adapter-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8082/health || exit 1"]
@@ -240,6 +319,38 @@ services:
       timeout: 3s
       retries: 5
 
+  admin-service:
+    <<: *go-service
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: admin-service/cmd/admin-service
+    environment:
+      HTTP_ADDR: ":8087"
+      ADMIN_API_KEY: admin-dev-key
+      ORDER_SERVICE_URL: http://order-service:8081
+      MARKET_DATA_URL: http://market-data:8082
+      LEDGER_SERVICE_URL: http://ledger-service:8083
+      WALLET_SERVICE_URL: http://wallet-service:8084
+      BLOCKCHAIN_SERVICE_URL: http://blockchain-service:8085
+    ports:
+      - "8087:8087"
+    depends_on:
+      order-service:
+        condition: service_started
+      market-data:
+        condition: service_started
+      ledger-service:
+        condition: service_started
+      blockchain-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8087/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+
   settlement-service:
     <<: *go-service
     build:
@@ -288,28 +399,53 @@ services:
   # ── Placeholder services (replace with full implementations) ────────────────
 
   auth-service:
+    <<: *go-service
     build:
       context: ..
-      dockerfile: docker/stubs/Dockerfile
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: auth-service/cmd/auth-service
     environment:
-      SERVICE_NAME: auth-service
       HTTP_ADDR: ":8090"
+      JWT_SECRET: cex-dev-jwt-secret-change-in-production
+      JWT_ISSUER: cex-auth
+      ACCESS_TOKEN_TTL: 15m
+      REFRESH_TOKEN_TTL: 168h
+      REDIS_ADDR: redis:6379
+      USER_SERVICE_URL: http://user-service:8091
     ports:
       - "8090:8090"
-    networks:
-      - cex
+    depends_on:
+      redis:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8090/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
 
   user-service:
+    <<: *go-service
     build:
       context: ..
-      dockerfile: docker/stubs/Dockerfile
+      dockerfile: docker/Dockerfile
+      args:
+        SERVICE_PATH: user-service/cmd/user-service
     environment:
-      SERVICE_NAME: user-service
       HTTP_ADDR: ":8091"
+      DATABASE_URL: postgres://cex:cex@postgres:5432/cex?sslmode=disable
     ports:
       - "8091:8091"
-    networks:
-      - cex
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8091/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
 
   matching-service:
     build:
@@ -341,7 +477,7 @@ services:
   grafana:
     image: grafana/grafana:10.4.0
     ports:
-      - "3000:3000"
+      - "3001:3000"   # 3001 on host — frontend uses :3000
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin

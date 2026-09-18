@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/shivank0310/cex.git/binance-adapter-service/internal/apperrors"
+	"github.com/shivank0310/cex.git/binance-adapter-service/internal/mapping"
 	"github.com/shivank0310/cex.git/matching-engine/pkg/decimal"
 )
 
@@ -108,6 +109,112 @@ func (m *MockProvider) GetAccount(_ context.Context) ([]AccountBalance, error) {
 
 func (m *MockProvider) GetTickerPrice(_ context.Context, symbol string) (TickerPrice, error) {
 	return TickerPrice{Symbol: symbol, Price: 101100}, nil
+}
+
+func (m *MockProvider) GetTicker24h(_ context.Context, symbol string) (Ticker24h, error) {
+	return Ticker24h{
+		Symbol:            symbol,
+		LastPrice:         101100,
+		BestBid:           101050,
+		BestAsk:           101150,
+		High24h:           102000,
+		Low24h:            100500,
+		Volume24h:         12500,
+		QuoteVolume24h:    1_260_000_000,
+		PriceChange24h:    800,
+		PriceChangePct24h: 79,
+		TradeCount24h:     8420,
+	}, nil
+}
+
+func (m *MockProvider) GetDepth(_ context.Context, symbol string, limit int) (DepthSnapshot, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	snap := DepthSnapshot{Symbol: symbol}
+	for i := 1; i <= limit; i++ {
+		snap.Bids = append(snap.Bids, DepthLevel{
+			Price:    101100 - int64(i*50),
+			Quantity: int64(10 + i*5),
+		})
+		snap.Asks = append(snap.Asks, DepthLevel{
+			Price:    101100 + int64(i*50),
+			Quantity: int64(10 + i*5),
+		})
+	}
+	return snap, nil
+}
+
+func (m *MockProvider) GetRecentTrades(_ context.Context, symbol string, limit int) ([]MarketTrade, error) {
+	if limit <= 0 {
+		limit = 30
+	}
+	now := time.Now().UTC()
+	out := make([]MarketTrade, 0, limit)
+	for i := 0; i < limit; i++ {
+		price := 101100 + int64((i%5)-2)*25
+		out = append(out, MarketTrade{
+			ID:        fmt.Sprintf("MOCK-T-%d", i+1),
+			Symbol:    symbol,
+			Price:     price,
+			Quantity:  20 + int64(i%3)*10,
+			Timestamp: now.Add(-time.Duration(i) * time.Minute),
+		})
+	}
+	return out, nil
+}
+
+func (m *MockProvider) GetKlines(_ context.Context, symbol, interval string, limit int) ([]Kline, error) {
+	if limit <= 0 {
+		limit = 60
+	}
+	dur, ok := intervalDuration(interval)
+	if !ok {
+		return nil, apperrors.New(apperrors.CodeInvalidRequest, "unsupported interval")
+	}
+
+	now := time.Now().UTC().Truncate(dur)
+	out := make([]Kline, 0, limit)
+	price := 101000
+	for i := limit - 1; i >= 0; i-- {
+		openTime := now.Add(-time.Duration(i) * dur)
+		closeTime := openTime.Add(dur - time.Millisecond)
+		open := int64(price)
+		high := open + 150
+		low := open - 120
+		close := open + int64((i%7)-3)*20
+		out = append(out, Kline{
+			OpenTime: openTime, CloseTime: closeTime,
+			Open: open, High: high, Low: low, Close: close,
+			Volume: 500 + int64(i*3), QuoteVolume: decimal.Notional(close, 500),
+			TradeCount: 12 + i%5,
+		})
+		price = int(close)
+	}
+	return out, nil
+}
+
+func intervalDuration(name string) (time.Duration, bool) {
+	switch mapping.NormalizeInterval(name) {
+	case "1m":
+		return time.Minute, true
+	case "5m":
+		return 5 * time.Minute, true
+	case "10m":
+		return 10 * time.Minute, true
+	case "15m":
+		return 15 * time.Minute, true
+	case "30m":
+		return 30 * time.Minute, true
+	case "1h":
+		return time.Hour, true
+	case "4h":
+		return 4 * time.Hour, true
+	case "24h":
+		return 24 * time.Hour, true
+	default:
+		return 0, false
+	}
 }
 
 func (m *MockProvider) applyFill(req OrderRequest, qty int64) {

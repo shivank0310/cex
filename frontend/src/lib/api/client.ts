@@ -1,6 +1,6 @@
 import type { ApiError } from "@/types";
 
-// Empty = same-origin; Next.js rewrites /api/* to backend
+// Empty = same-origin; Next.js rewrites /api/* to nginx → api-gateway
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export class ApiClientError extends Error {
@@ -14,6 +14,11 @@ export class ApiClientError extends Error {
   }
 }
 
+export function authHeader(token: string): string {
+  if (!token) return "";
+  return token.startsWith("Bearer ") ? token : `Bearer ${token}`;
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit & { token?: string } = {}
@@ -24,15 +29,29 @@ export async function apiFetch<T>(
     ...(init.headers ?? {}),
   };
   if (token) {
-    (headers as Record<string, string>)["Authorization"] = token;
+    (headers as Record<string, string>)["Authorization"] = authHeader(token);
   }
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
 
   if (!res.ok) {
     let err: ApiError = { code: "UNKNOWN", message: res.statusText };
+    const contentType = res.headers.get("content-type") ?? "";
     try {
-      err = await res.json();
+      if (contentType.includes("application/json")) {
+        err = await res.json();
+      } else {
+        const text = await res.text();
+        if (res.status === 404) {
+          err = {
+            code: "API_UNAVAILABLE",
+            message:
+              "API not found. Start the backend (docker compose up) and ensure NEXT_PUBLIC_API_URL points to api-gateway :8080 — not Apache on :80.",
+          };
+        } else if (text) {
+          err = { code: "HTTP_ERROR", message: text.slice(0, 200) };
+        }
+      }
     } catch {
       /* empty body */
     }

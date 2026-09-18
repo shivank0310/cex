@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { getCandles, getOrderBook, getTicker, getTrades } from "@/lib/api/market";
+import { candleLimit, type CandleInterval } from "@/lib/chart-intervals";
 import type { Candle, MarketTrade, OrderBook, Ticker } from "@/types";
 
 const POLL_MS = 3000;
 
-export function useMarketData(symbol: string) {
+export function useMarketData(symbol: string, interval: CandleInterval = "1m") {
   const [ticker, setTicker] = useState<Ticker | null>(null);
   const [orderBook, setOrderBook] = useState<OrderBook | null>(null);
   const [trades, setTrades] = useState<MarketTrade[]>([]);
@@ -20,7 +21,7 @@ export function useMarketData(symbol: string) {
         getTicker(symbol).catch(() => null),
         getOrderBook(symbol).catch(() => null),
         getTrades(symbol, 30).catch(() => []),
-        getCandles(symbol, "1m", 60).catch(() => []),
+        getCandles(symbol, interval, candleLimit(interval)).catch(() => []),
       ]);
       if (t) setTicker(t);
       if (ob) setOrderBook(ob);
@@ -32,9 +33,10 @@ export function useMarketData(symbol: string) {
     } finally {
       setLoading(false);
     }
-  }, [symbol]);
+  }, [symbol, interval]);
 
   useEffect(() => {
+    setCandles([]);
     setLoading(true);
     refresh();
     const id = setInterval(refresh, POLL_MS);

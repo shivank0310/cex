@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Activity, BarChart3, LayoutDashboard, Wallet } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Activity, BarChart3, LayoutDashboard, LogOut, User, Wallet } from "lucide-react";
 import clsx from "clsx";
 import { Button } from "@/components/ui/Button";
+import { useAuthStore, useIsAuthenticated } from "@/store/auth-store";
 
 const NAV = [
   { href: "/", label: "Home", icon: LayoutDashboard },
@@ -15,6 +16,15 @@ const NAV = [
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
+  const isAuthenticated = useIsAuthenticated();
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+
+  async function handleLogout() {
+    await logout();
+    router.push("/");
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0a0a12]/80 backdrop-blur-xl">
@@ -45,8 +55,28 @@ export function Header() {
         </nav>
 
         <div className="flex items-center gap-3">
+          {isAuthenticated && user ? (
+            <>
+              <span className="hidden items-center gap-2 text-sm text-slate-300 sm:flex">
+                <User className="h-4 w-4" />
+                {user.username || user.email}
+              </span>
+              <Button size="sm" variant="ghost" onClick={handleLogout}>
+                <LogOut className="h-4 w-4" />
+              </Button>
+            </>
+          ) : (
+            <>
+              <Link href="/login">
+                <Button size="sm" variant="ghost">Sign In</Button>
+              </Link>
+              <Link href="/register">
+                <Button size="sm">Register</Button>
+              </Link>
+            </>
+          )}
           <Link href="/trade">
-            <Button size="sm">Launch App</Button>
+            <Button size="sm" variant="secondary">Trade</Button>
           </Link>
         </div>
       </div>
