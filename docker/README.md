@@ -29,7 +29,8 @@ Containerized deployment for the full CEX platform.
 
 | Container | Port | Role |
 |-----------|------|------|
-| **nginx** | 80 | API gateway + frontend |
+| **frontend** | 3000 | Next.js trading UI (3D landing, terminal) |
+| **nginx** | 80 | API gateway |
 | **order-service** | 8081 | Orders + in-process matching engine |
 | **market-data** | 8082 | Tickers, order book, candles |
 | **ledger-service** | 8083 | Double-entry ledger |

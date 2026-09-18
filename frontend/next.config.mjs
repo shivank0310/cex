@@ -1,0 +1,15 @@
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: "standalone",
+  async rewrites() {
+    const apiUrl = process.env.API_PROXY_URL ?? "http://localhost";
+    return [
+      {
+        source: "/api/:path*",
+        destination: `${apiUrl}/api/:path*`,
+      },
+    ];
+  },
+};
+
+export default nextConfig;

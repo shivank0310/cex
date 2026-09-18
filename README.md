@@ -561,6 +561,7 @@ cd contracts && make install && make test
 
 ```
 matching-engine/     ← order book, engine, settlement, Kafka publisher
+frontend/            ← Next.js trading UI (React, 3D hero, API integration)
 contracts/           ← Solidity: vault, treasury, tokens (NOT order matching)
 order-service/       ← validation pipeline + HTTP API
 market-data/         ← Kafka consumer + HTTP API (ticker, book, trades, candles, 24h stats)
@@ -576,6 +577,18 @@ pkg/redis/           ← cache, session, rate limit, locks, pub/sub
 docker/              ← Docker Compose: all services + postgres, redis, kafka, nginx, monitoring
 ...
 ```
+
+## Frontend
+
+Location: `frontend/`
+
+Next.js 14 trading UI with 3D landing page, trading terminal, markets, and wallet.
+
+```bash
+cd frontend && npm install --legacy-peer-deps && npm run dev
+```
+
+See [frontend/README.md](frontend/README.md).
 
 ## Docker
 

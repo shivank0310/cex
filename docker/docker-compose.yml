@@ -84,7 +84,24 @@ services:
     networks:
       - cex
 
-  # ── API Gateway + Frontend ──────────────────────────────────────────────────
+  # ── Frontend (Next.js) ──────────────────────────────────────────────────────
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        API_PROXY_URL: http://nginx:80
+    ports:
+      - "3000:3000"
+    environment:
+      API_PROXY_URL: http://nginx:80
+    depends_on:
+      - nginx
+    networks:
+      - cex
+
+  # ── API Gateway + Frontend static fallback ──────────────────────────────────
 
   nginx:
     image: nginx:1.25-alpine
