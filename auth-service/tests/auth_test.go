@@ -14,7 +14,7 @@ import (
 func setup() *service.AuthService {
 	cfg := config.Default()
 	cfg.BcryptCost = 4 // faster tests
-	return service.NewAuthService(cfg, repository.NewUserRepository(), repository.NewSessionRepository(), client.NewInMemoryUserClient())
+	return service.NewAuthService(cfg, repository.NewMemoryCredentialStore(), repository.NewMemorySessionStore(), client.NewInMemoryUserClient())
 }
 
 func TestRegisterLoginRefreshLogout(t *testing.T) {

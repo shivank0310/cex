@@ -29,7 +29,7 @@ Containerized deployment for the full CEX platform.
 
 | Container | Port | Role |
 |-----------|------|------|
-| **frontend** | 3002 | Next.js trading UI (Docker; local dev uses :3000) |
+| **frontend** | — | Run locally: `cd frontend && npm run dev` → http://localhost:3000 |
 | **nginx** | 80 | API gateway |
 | **order-service** | 8081 | Orders + in-process matching engine |
 | **api-gateway** | 8080 | API front door (routing, CORS, rate limits) |
@@ -73,7 +73,6 @@ docker/
 docker compose -f docker/docker-compose.yml up --build
 ```
 
-- Frontend (Docker): http://localhost:3002
 - Frontend (local dev): http://localhost:3000
 - API via nginx: http://localhost:8088
 - API gateway (direct): http://localhost:8080
@@ -122,5 +121,5 @@ Nginx (port 80) proxies `/api/*` to **api-gateway** (port 8080), which routes to
 
 - **Matching runs off-chain** inside order-service (not on blockchain).
 - **blockchain-service** is separate from matching-engine by design.
-- **PostgreSQL** schema is pre-provisioned; services use in-memory stores until migrated.
+- **PostgreSQL** holds user profiles (`users.accounts`) and auth password hashes (`auth.credentials`). **Redis** holds auth refresh sessions.
 - **auth**, **user**, **matching** stubs are placeholders for future services.

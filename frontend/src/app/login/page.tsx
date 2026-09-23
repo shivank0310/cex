@@ -24,7 +24,8 @@ function LoginForm() {
       const response = await login(email, password);
       setSession(response);
       const redirect = searchParams.get("redirect") || "/trade";
-      router.push(redirect);
+      router.replace(redirect);
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

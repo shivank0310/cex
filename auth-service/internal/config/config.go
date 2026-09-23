@@ -9,6 +9,7 @@ type Config struct {
 	AccessTokenTTL   time.Duration
 	RefreshTokenTTL  time.Duration
 	RedisAddr        string
+	DatabaseURL      string
 	UserServiceURL   string
 	BcryptCost       int
 }

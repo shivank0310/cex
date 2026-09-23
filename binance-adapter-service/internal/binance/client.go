@@ -142,6 +142,9 @@ func (c *RESTClient) doPublic(ctx context.Context, method, path string, params u
 	if err != nil {
 		return nil, err
 	}
+	if c.apiKey != "" {
+		req.Header.Set("X-MBX-APIKEY", c.apiKey)
+	}
 	return c.execute(req)
 }
 

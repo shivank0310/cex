@@ -9,20 +9,21 @@ import (
 	"github.com/shivank0310/cex.git/auth-service/internal/model"
 )
 
-type UserRepository struct {
+// MemoryCredentialStore is for unit tests and local dev without PostgreSQL.
+type MemoryCredentialStore struct {
 	mu    sync.RWMutex
 	users map[string]*model.User
 	byEmail map[string]string
 }
 
-func NewUserRepository() *UserRepository {
-	return &UserRepository{
+func NewMemoryCredentialStore() *MemoryCredentialStore {
+	return &MemoryCredentialStore{
 		users:   make(map[string]*model.User),
 		byEmail: make(map[string]string),
 	}
 }
 
-func (r *UserRepository) CreateWithID(id, email, passwordHash string, role model.Role) (model.User, error) {
+func (r *MemoryCredentialStore) CreateWithID(id, email, passwordHash string, role model.Role) (model.User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -49,7 +50,7 @@ func (r *UserRepository) CreateWithID(id, email, passwordHash string, role model
 	return user, nil
 }
 
-func (r *UserRepository) GetByID(id string) (*model.User, bool) {
+func (r *MemoryCredentialStore) GetByID(id string) (*model.User, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	user, ok := r.users[id]
@@ -60,7 +61,7 @@ func (r *UserRepository) GetByID(id string) (*model.User, bool) {
 	return &copy, true
 }
 
-func (r *UserRepository) GetByEmail(email string) (*model.User, bool) {
+func (r *MemoryCredentialStore) GetByEmail(email string) (*model.User, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	id, ok := r.byEmail[strings.ToLower(strings.TrimSpace(email))]

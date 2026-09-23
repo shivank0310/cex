@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { memo, useId, useMemo, useState } from "react";
 import { CANDLE_INTERVALS, intervalLabel, type CandleInterval } from "@/lib/chart-intervals";
 import { formatPrice } from "@/lib/format";
 import type { Candle } from "@/types";
@@ -9,6 +9,8 @@ export type ChartType = "area" | "line" | "candlestick" | "ohlc";
 
 interface PriceChartProps {
   candles: Candle[];
+  candlesLoading?: boolean;
+  candlesError?: string | null;
   lastPrice?: number;
   interval: CandleInterval;
   onIntervalChange: (interval: CandleInterval) => void;
@@ -189,12 +191,45 @@ function formatAxisTime(iso: string, interval: CandleInterval): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-export function PriceChart({ candles, lastPrice, interval, onIntervalChange }: PriceChartProps) {
+const MemoCandlestickChart = memo(CandlestickChart);
+const MemoOhlcChart = memo(OhlcChart);
+const MemoAreaChart = memo(AreaChart);
+const MemoLineChart = memo(LineChart);
+
+export function PriceChart({
+  candles,
+  candlesLoading = false,
+  candlesError = null,
+  lastPrice,
+  interval,
+  onIntervalChange,
+}: PriceChartProps) {
   const [chartType, setChartType] = useState<ChartType>("candlestick");
   const gradId = useId().replace(/:/g, "");
 
   const isUp = candles.length > 0 && candles[candles.length - 1].close >= candles[0].open;
   const activeLabel = CHART_TYPES.find((t) => t.id === chartType)?.label ?? "Chart";
+  const showLoading = candlesLoading && candles.length === 0;
+  const showEmpty = !candlesLoading && candles.length === 0;
+  const showOverlay = candlesLoading && candles.length > 0;
+
+  const chartBody = useMemo(() => {
+    if (!candles.length) return null;
+    return (
+      <>
+        <GridLines candles={candles} type={chartType} />
+        {chartType === "area" && <MemoAreaChart candles={candles} gradId={gradId} />}
+        {chartType === "line" && <MemoLineChart candles={candles} />}
+        {chartType === "candlestick" && <MemoCandlestickChart candles={candles} />}
+        {chartType === "ohlc" && <MemoOhlcChart candles={candles} />}
+      </>
+    );
+  }, [candles, chartType, gradId]);
+
+  function handleIntervalChange(next: CandleInterval) {
+    if (next === interval) return;
+    onIntervalChange(next);
+  }
 
   return (
     <div className="rounded-xl border border-white/10 bg-[#12121a] p-4">
@@ -218,7 +253,7 @@ export function PriceChart({ candles, lastPrice, interval, onIntervalChange }: P
             <button
               key={item.value}
               type="button"
-              onClick={() => onIntervalChange(item.value)}
+              onClick={() => handleIntervalChange(item.value)}
               className={`rounded-md px-2 py-1 text-xs font-medium transition ${
                 interval === item.value
                   ? "bg-cyan-600 text-white shadow-sm"
@@ -247,26 +282,44 @@ export function PriceChart({ candles, lastPrice, interval, onIntervalChange }: P
         </div>
       </div>
 
-      {!candles.length ? (
-        <div className="flex h-48 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-sm text-slate-500">
-          Loading {intervalLabel(interval)} candles...
-        </div>
-      ) : (
-        <>
-          <svg viewBox={`0 0 ${W} ${H}`} className="h-48 w-full" preserveAspectRatio="none" role="img" aria-label={`${activeLabel} price chart`}>
-            <GridLines candles={candles} type={chartType} />
-            {chartType === "area" && <AreaChart candles={candles} gradId={gradId} />}
-            {chartType === "line" && <LineChart candles={candles} />}
-            {chartType === "candlestick" && <CandlestickChart candles={candles} />}
-            {chartType === "ohlc" && <OhlcChart candles={candles} />}
-          </svg>
-          <div className="mt-2 flex justify-between text-[10px] text-slate-500">
-            <span>{formatAxisTime(candles[0].open_time, interval)}</span>
-            <span className="text-slate-600">Green = up · Red = down</span>
-            <span>{formatAxisTime(candles[candles.length - 1].close_time, interval)}</span>
+      <div className="relative">
+        {showLoading ? (
+          <div className="flex h-48 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-sm text-slate-500">
+            Loading {intervalLabel(interval)} candles...
           </div>
-        </>
-      )}
+        ) : showEmpty ? (
+          <div className="flex h-48 items-center justify-center rounded-lg border border-white/5 bg-black/20 text-sm text-slate-500">
+            {candlesError ?? `No ${intervalLabel(interval)} candle data`}
+          </div>
+        ) : (
+          <>
+            <svg
+              key={interval}
+              viewBox={`0 0 ${W} ${H}`}
+              className={`h-48 w-full transition-opacity duration-200 ${showOverlay ? "opacity-60" : "opacity-100"}`}
+              preserveAspectRatio="none"
+              role="img"
+              aria-label={`${activeLabel} price chart`}
+            >
+              {chartBody}
+            </svg>
+            {candles.length > 0 && (
+              <div className="mt-2 flex justify-between text-[10px] text-slate-500">
+                <span>{formatAxisTime(candles[0].open_time, interval)}</span>
+                <span className="text-slate-600">Green = up · Red = down</span>
+                <span>{formatAxisTime(candles[candles.length - 1].close_time, interval)}</span>
+              </div>
+            )}
+          </>
+        )}
+        {showOverlay && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span className="rounded-full bg-black/50 px-3 py-1 text-xs text-slate-300">
+              Updating {intervalLabel(interval)}…
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

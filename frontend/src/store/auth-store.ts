@@ -37,10 +37,11 @@ export const useAuthStore = create<AuthState>()(
           try {
             await authApi.logout(refreshToken);
           } catch {
-            /* ignore */
+            /* server session may already be gone */
           }
         }
         set({ user: null, accessToken: null, refreshToken: null });
+        await useAuthStore.persist.clearStorage();
       },
       refreshSession: async () => {
         const { refreshToken } = get();
@@ -51,6 +52,7 @@ export const useAuthStore = create<AuthState>()(
           return true;
         } catch {
           get().clearSession();
+          await useAuthStore.persist.clearStorage();
           return false;
         }
       },
@@ -62,8 +64,12 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
       }),
-      onRehydrateStorage: () => (state) => {
-        state?.setHydrated();
+      skipHydration: true,
+      onRehydrateStorage: () => (_state, error) => {
+        if (error) {
+          console.error("auth rehydrate failed", error);
+        }
+        useAuthStore.setState({ hydrated: true });
       },
     }
   )

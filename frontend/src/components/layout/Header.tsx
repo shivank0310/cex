@@ -23,7 +23,8 @@ export function Header() {
 
   async function handleLogout() {
     await logout();
-    router.push("/");
+    router.replace("/");
+    router.refresh();
   }
 
   return (
@@ -61,7 +62,7 @@ export function Header() {
                 <User className="h-4 w-4" />
                 {user.username || user.email}
               </span>
-              <Button size="sm" variant="ghost" onClick={handleLogout}>
+              <Button type="button" size="sm" variant="ghost" onClick={handleLogout} aria-label="Sign out">
                 <LogOut className="h-4 w-4" />
               </Button>
             </>

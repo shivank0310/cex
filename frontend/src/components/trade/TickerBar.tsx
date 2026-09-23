@@ -3,11 +3,11 @@
 import type { Ticker } from "@/types";
 import { formatPct, formatPrice } from "@/lib/format";
 
-export function TickerBar({ ticker }: { ticker: Ticker | null }) {
+export function TickerBar({ ticker, loading = false }: { ticker: Ticker | null; loading?: boolean }) {
   if (!ticker) {
     return (
       <div className="rounded-xl border border-white/10 bg-[#12121a] px-4 py-3 text-slate-500 text-sm">
-        Loading ticker...
+        {loading ? "Loading ticker..." : "Ticker unavailable — check backend is running"}
       </div>
     );
   }

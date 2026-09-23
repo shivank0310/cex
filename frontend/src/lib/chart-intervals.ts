@@ -13,19 +13,19 @@ export type CandleInterval = (typeof CANDLE_INTERVALS)[number]["value"];
 export function candleLimit(interval: CandleInterval): number {
   switch (interval) {
     case "1m":
-      return 120;
+      return 60;
     case "5m":
-      return 96;
+      return 60;
     case "10m":
-      return 72;
+      return 60;
     case "15m":
-      return 96;
+      return 60;
     case "30m":
       return 48;
     case "1h":
-      return 72;
+      return 48;
     case "24h":
-      return 60;
+      return 30;
   }
 }
 

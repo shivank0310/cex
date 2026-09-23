@@ -8,9 +8,11 @@ import (
 
 	"github.com/shivank0310/cex.git/auth-service/internal/client"
 	"github.com/shivank0310/cex.git/auth-service/internal/config"
+	"github.com/shivank0310/cex.git/auth-service/internal/database"
 	"github.com/shivank0310/cex.git/auth-service/internal/handler"
 	"github.com/shivank0310/cex.git/auth-service/internal/repository"
 	"github.com/shivank0310/cex.git/auth-service/internal/service"
+	cexredis "github.com/shivank0310/cex.git/pkg/redis"
 )
 
 func main() {
@@ -35,6 +37,7 @@ func main() {
 		}
 	}
 	cfg.RedisAddr = os.Getenv("REDIS_ADDR")
+	cfg.DatabaseURL = os.Getenv("DATABASE_URL")
 	if url := os.Getenv("USER_SERVICE_URL"); url != "" {
 		cfg.UserServiceURL = url
 	}
@@ -48,9 +51,36 @@ func main() {
 		log.Println("USER_SERVICE_URL not set — using in-memory user profiles (dev mode)")
 	}
 
-	users := repository.NewUserRepository()
-	sessions := repository.NewSessionRepository()
-	svc := service.NewAuthService(cfg, users, sessions, profiles)
+	var credentials repository.CredentialStore
+	if cfg.DatabaseURL != "" {
+		db, err := database.Open(cfg.DatabaseURL)
+		if err != nil {
+			log.Fatalf("database connect failed: %v", err)
+		}
+		defer db.Close()
+		credentials = repository.NewPostgresCredentialStore(db)
+		log.Println("PostgreSQL credential store enabled")
+	} else {
+		credentials = repository.NewMemoryCredentialStore()
+		log.Println("DATABASE_URL not set — credentials in-memory only (lost on restart)")
+	}
+
+	var sessions repository.SessionStore
+	if cfg.RedisAddr != "" {
+		rcfg := cexredis.ConfigFromEnv()
+		redisClient, err := cexredis.NewClientWithRetry(rcfg, 60*time.Second)
+		if err != nil {
+			log.Fatalf("redis connect failed: %v", err)
+		}
+		defer redisClient.Close()
+		sessions = repository.NewRedisSessionStore(cexredis.NewCache(redisClient))
+		log.Printf("Redis session store enabled (addr: %s)", rcfg.Addr)
+	} else {
+		sessions = repository.NewMemorySessionStore()
+		log.Println("REDIS_ADDR not set — refresh sessions in-memory only (lost on restart)")
+	}
+
+	svc := service.NewAuthService(cfg, credentials, sessions, profiles)
 	authHandler := handler.NewAuthHandler(svc)
 
 	mux := http.NewServeMux()

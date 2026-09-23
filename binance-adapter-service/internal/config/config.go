@@ -3,12 +3,13 @@ package config
 import "os"
 
 type Config struct {
-	HTTPAddr    string
-	APIKey      string
-	APISecret   string
-	BaseURL     string
-	RecvWindow  int64
-	UseMock     bool
+	HTTPAddr      string
+	APIKey        string
+	APISecret     string
+	BaseURL       string
+	MarketDataURL string
+	RecvWindow    int64
+	UseMockOrders bool
 }
 
 func Default() Config {
@@ -18,13 +19,18 @@ func Default() Config {
 	if baseURL == "" {
 		baseURL = "https://testnet.binance.vision"
 	}
+	marketDataURL := os.Getenv("BINANCE_MARKET_DATA_URL")
+	if marketDataURL == "" {
+		marketDataURL = "https://api.binance.com"
+	}
 
 	return Config{
-		HTTPAddr:   ":8086",
-		APIKey:     apiKey,
-		APISecret:  apiSecret,
-		BaseURL:    baseURL,
-		RecvWindow: 5000,
-		UseMock:    apiKey == "" || apiSecret == "",
+		HTTPAddr:      ":8086",
+		APIKey:        apiKey,
+		APISecret:     apiSecret,
+		BaseURL:       baseURL,
+		MarketDataURL: marketDataURL,
+		RecvWindow:    5000,
+		UseMockOrders: apiKey == "" || apiSecret == "",
 	}
 }

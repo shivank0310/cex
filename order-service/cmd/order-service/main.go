@@ -117,7 +117,7 @@ func newOrderService(cfg config.Config, pipeline *validator.Pipeline, registry *
 	}
 
 	rcfg := redis.ConfigFromEnv()
-	client, err := redis.NewClient(rcfg)
+	client, err := redis.NewClientWithRetry(rcfg, 60*time.Second)
 	if err != nil {
 		log.Fatalf("redis connect failed: %v", err)
 	}

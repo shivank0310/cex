@@ -19,13 +19,13 @@ import (
 
 type AuthService struct {
 	cfg      config.Config
-	users    *repository.UserRepository
-	sessions *repository.SessionRepository
+	users    repository.CredentialStore
+	sessions repository.SessionStore
 	profiles client.UserClient
 	tokens   *jwt.Manager
 }
 
-func NewAuthService(cfg config.Config, users *repository.UserRepository, sessions *repository.SessionRepository, profiles client.UserClient) *AuthService {
+func NewAuthService(cfg config.Config, users repository.CredentialStore, sessions repository.SessionStore, profiles client.UserClient) *AuthService {
 	return &AuthService{
 		cfg:      cfg,
 		users:    users,

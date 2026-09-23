@@ -143,11 +143,23 @@ Auth Service
 Frontend stores tokens
 ```
 
-On **register**, auth-service creates the user profile in user-service (PostgreSQL) first, then stores credentials locally:
+On **register**, auth-service creates the user profile in user-service (PostgreSQL) first, then stores the bcrypt password hash in **`auth.credentials`** (PostgreSQL). Refresh sessions are stored in **Redis** (survive auth-service restarts; TTL matches refresh token lifetime).
 
 ```
-Auth Service → User Service → PostgreSQL
+Auth Service → User Service → PostgreSQL (users.accounts)
+            → PostgreSQL (auth.credentials)
+            → Redis (refresh sessions)
 ```
+
+Previously credentials were in-memory only; with `DATABASE_URL` and `REDIS_ADDR` set (Docker Compose defaults), login survives container and machine restarts.
+
+**Existing Postgres volumes:** if the database was created before `003_auth_credentials.sql`, apply it once:
+
+```bash
+docker exec -i cex-postgres-1 psql -U cex -d cex < docker/postgres/init/003_auth_credentials.sql
+```
+
+Accounts registered only before this migration have a profile in `users.accounts` but no row in `auth.credentials` — register again after removing the old profile, or insert credentials manually in dev.
 
 Protected requests send:
 
@@ -201,7 +213,7 @@ Via API gateway: `http://localhost/api/v1/auth/...`
 JWT_SECRET=cex-dev-jwt-secret-change-in-production go run ./auth-service/cmd/auth-service
 ```
 
-Env vars: `JWT_SECRET`, `JWT_ISSUER`, `ACCESS_TOKEN_TTL` (default `15m`), `REFRESH_TOKEN_TTL` (default `168h`).
+Env vars: `JWT_SECRET`, `JWT_ISSUER`, `ACCESS_TOKEN_TTL` (default `15m`), `REFRESH_TOKEN_TTL` (default `168h`), `DATABASE_URL` (PostgreSQL credentials), `REDIS_ADDR` (refresh sessions), `USER_SERVICE_URL`.
 
 ### JWT integration (order-service)
 
@@ -942,7 +954,7 @@ docker compose -f docker/docker-compose.yml up --build
 |-----|---------|
 | http://localhost | Nginx (frontend + API gateway) |
 | http://localhost:3001 | Grafana (admin / admin) |
-| http://localhost:3002 | Frontend (Docker) |
+| http://localhost:3000 | Frontend (`npm run dev`) |
 | http://localhost:9090 | Prometheus |
 
 Infrastructure only (for local Go dev):

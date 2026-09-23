@@ -8,21 +8,22 @@ import (
 	"github.com/shivank0310/cex.git/auth-service/internal/model"
 )
 
-type SessionRepository struct {
+// MemorySessionStore is for unit tests and local dev without Redis.
+type MemorySessionStore struct {
 	mu       sync.RWMutex
 	sessions map[string]*model.Session // refresh token → session
 	byUser   map[string][]string
 	seq      int
 }
 
-func NewSessionRepository() *SessionRepository {
-	return &SessionRepository{
+func NewMemorySessionStore() *MemorySessionStore {
+	return &MemorySessionStore{
 		sessions: make(map[string]*model.Session),
 		byUser:   make(map[string][]string),
 	}
 }
 
-func (r *SessionRepository) Create(userID, refreshToken string, expiresAt time.Time) model.Session {
+func (r *MemorySessionStore) Create(userID, refreshToken string, expiresAt time.Time) model.Session {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -39,7 +40,7 @@ func (r *SessionRepository) Create(userID, refreshToken string, expiresAt time.T
 	return session
 }
 
-func (r *SessionRepository) GetByRefreshToken(token string) (*model.Session, bool) {
+func (r *MemorySessionStore) GetByRefreshToken(token string) (*model.Session, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	session, ok := r.sessions[token]
@@ -50,7 +51,7 @@ func (r *SessionRepository) GetByRefreshToken(token string) (*model.Session, boo
 	return &copy, true
 }
 
-func (r *SessionRepository) Revoke(refreshToken string) bool {
+func (r *MemorySessionStore) Revoke(refreshToken string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	session, ok := r.sessions[refreshToken]
@@ -62,7 +63,7 @@ func (r *SessionRepository) Revoke(refreshToken string) bool {
 	return true
 }
 
-func (r *SessionRepository) RevokeAllForUser(userID string) int {
+func (r *MemorySessionStore) RevokeAllForUser(userID string) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	tokens := r.byUser[userID]

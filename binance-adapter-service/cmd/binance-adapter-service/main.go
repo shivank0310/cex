@@ -21,14 +21,19 @@ func main() {
 		cfg.HTTPAddr = addr
 	}
 
-	var provider binance.SpotProvider
-	if cfg.UseMock {
-		log.Println("BINANCE_API_KEY not set — using mock Binance provider")
-		provider = binance.NewMockProvider()
+	marketClient := binance.NewRESTClient(cfg.MarketDataURL, cfg.APIKey, "", cfg.RecvWindow)
+	log.Printf("Binance live market data enabled (base: %s, api_key: %s)",
+		cfg.MarketDataURL, maskKey(cfg.APIKey))
+
+	var tradingProvider binance.SpotProvider
+	if cfg.UseMockOrders {
+		log.Println("BINANCE_API_SECRET not set — mock provider for order placement")
+		tradingProvider = binance.NewMockProvider()
 	} else {
-		log.Printf("Binance Spot API enabled (base: %s)", cfg.BaseURL)
-		provider = binance.NewRESTClient(cfg.BaseURL, cfg.APIKey, cfg.APISecret, cfg.RecvWindow)
+		log.Printf("Binance Spot trading API enabled (base: %s)", cfg.BaseURL)
+		tradingProvider = binance.NewRESTClient(cfg.BaseURL, cfg.APIKey, cfg.APISecret, cfg.RecvWindow)
 	}
+	provider := binance.NewCompositeProvider(marketClient, tradingProvider)
 
 	repo := repository.NewOrderRepository()
 	svc := service.NewAdapterService(provider, repo)
@@ -49,4 +54,14 @@ func main() {
 
 	log.Println("binance-adapter-service running")
 	<-ctx.Done()
+}
+
+func maskKey(key string) string {
+	if key == "" {
+		return "(none)"
+	}
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "..." + key[len(key)-4:]
 }

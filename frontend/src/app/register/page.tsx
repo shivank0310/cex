@@ -23,7 +23,8 @@ export default function RegisterPage() {
     try {
       const response = await register(email, password, username);
       setSession(response);
-      router.push("/trade");
+      router.replace("/trade");
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {

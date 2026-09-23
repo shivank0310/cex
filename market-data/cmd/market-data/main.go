@@ -73,7 +73,7 @@ func newMarketDataService(cfg config.Config, st *store.Store) *service.MarketDat
 	var marketCache *cache.MarketCache
 	if os.Getenv("REDIS_ADDR") != "" {
 		rcfg := redis.ConfigFromEnv()
-		redisClient, err := redis.NewClient(rcfg)
+		redisClient, err := redis.NewClientWithRetry(rcfg, 60*time.Second)
 		if err != nil {
 			log.Fatalf("redis connect failed: %v", err)
 		}

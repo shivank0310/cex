@@ -5,6 +5,7 @@ import "strings"
 // Key prefixes — all Redis keys are namespaced under cex:
 const (
 	prefixSession   = "cex:session:"
+	prefixAuthRefresh = "cex:auth:refresh:"
 	prefixRateLimit = "cex:ratelimit:"
 	prefixTicker    = "cex:market:ticker:"
 	prefixOrderBook = "cex:market:orderbook:"
@@ -16,6 +17,7 @@ const (
 )
 
 func SessionKey(token string) string       { return prefixSession + token }
+func AuthRefreshKey(refreshToken string) string { return prefixAuthRefresh + refreshToken }
 func RateLimitKey(userID, endpoint string) string { return prefixRateLimit + userID + ":" + endpoint }
 func TickerKey(symbol string) string       { return prefixTicker + NormalizeSymbol(symbol) }
 func OrderBookKey(symbol string) string    { return prefixOrderBook + NormalizeSymbol(symbol) }
